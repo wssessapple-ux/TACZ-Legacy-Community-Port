@@ -3,6 +3,7 @@ package com.tacz.legacy.common.entity.shooter
 import com.tacz.legacy.api.entity.IGunOperator
 import com.tacz.legacy.api.item.IGun
 import com.tacz.legacy.common.config.LegacyConfigManager
+import com.tacz.legacy.common.resource.GunDataAccessor
 import com.tacz.legacy.common.resource.TACZAttachmentModifierRegistry
 import com.tacz.legacy.common.resource.TACZGunPackRuntimeRegistry
 import com.tacz.legacy.common.resource.TACZGunPropertyResolver
@@ -18,11 +19,9 @@ import java.util.UUID
  * 两套 AttributeModifier：
  * - 重量修正（weight_modifier → MULTIPLY_BASE(operation=1)）：枪基础重量 + 配件 weight_modifier eval
  *   → -weight × weightSpeedMultiplier（amount 为负 = 减速），对齐上游 LivingEntitySpeedModifier.java
- * - 移动速度修正（movement_speed → MULTIPLY_TOTAL(operation=2)）：配件 movement_speed raw json 的
- *   base/aim/reload 逐分量相加（对齐上游 ExtraMovementModifier.java），对齐 1.12.2 MoveSpeed 语义。
- *
- * 注：我方当前未解析"枪自身 movement_speed 基础值"（上游 gunData.moveSpeedBase/Aim/Reload），
- * 此实现只叠加配件 movement_speed（从 0 起）；枪自身若后续补解析可在此处加入。
+ * - 移动速度修正（movement_speed → MULTIPLY_TOTAL(operation=2)）：枪自身 movement_speed 三档
+ *   （base/aim/reload）起步，再叠配件 raw json 的 base/aim/reload 逐分量相加
+ *   （对齐上游 MoveSpeed + ExtraMovementModifier.java），对齐 1.12.2 MoveSpeed 语义。
  */
 internal object LivingEntitySpeedModifier {
     private val SPEED_MODIFIER_UUID = UUID.fromString("4D5696AE-A7C5-C59C-80E9-2A2DC8373C46")
@@ -66,7 +65,8 @@ internal object LivingEntitySpeedModifier {
             speedAttr.removeModifier(WEIGHT_SPEED_MODIFIER_UUID)
         }
 
-        // ② movement_speed：配件 raw json 的 base/aim/reload 逐分量相加 → MULTIPLY_TOTAL
+        // ② movement_speed：枪自身三档起步，再叠配件 raw json 的 base/aim/reload → MULTIPLY_TOTAL
+        val gunData = GunDataAccessor.getGunData(gunId)
         var dBase = 0f
         var dAim = 0f
         var dReload = 0f
@@ -80,9 +80,9 @@ internal object LivingEntitySpeedModifier {
         val operator = IGunOperator.fromLivingEntity(shooter)
         val holder = operator.getDataHolder()
         val targetSpeed = when {
-            holder.reloadStateType.isReloading() -> dReload
-            holder.isAiming -> dAim
-            else -> dBase
+            holder.reloadStateType.isReloading() -> (gunData?.moveSpeedReload ?: 0f) + dReload
+            holder.isAiming -> (gunData?.moveSpeedAim ?: 0f) + dAim
+            else -> (gunData?.moveSpeedBase ?: 0f) + dBase
         }.coerceAtLeast(0f)
         // 无修正时不添加 modifier
         if (targetSpeed == 0f) {

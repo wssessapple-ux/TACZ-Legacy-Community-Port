@@ -10,6 +10,9 @@ internal object LegacyHitFeedbackState {
         val offset: Float,
         val alpha: Float,
         val headShotTint: Boolean,
+        val isKill: Boolean,
+        val progress: Float,
+        val scale: Float,
     )
 
     internal data class KillAmountSnapshot(
@@ -57,20 +60,34 @@ internal object LegacyHitFeedbackState {
         val remainHitTime = now - hitTimestamp
         val remainKillTime = now - killTimestamp
         val remainHeadShotTime = now - headShotTimestamp
-        var offset = startPosition
-        val fadeTime = if (remainKillTime > HIT_MARKER_KEEP_TIME_MS) {
-            if (remainHitTime > HIT_MARKER_KEEP_TIME_MS) {
-                return null
-            }
-            remainHitTime
-        } else {
-            offset += (remainKillTime * 4f) / HIT_MARKER_KEEP_TIME_MS
-            remainKillTime
+
+        val killActive = remainKillTime in 0..HIT_MARKER_KEEP_TIME_MS
+        val hitActive = remainHitTime in 0..HIT_MARKER_KEEP_TIME_MS
+        if (!killActive && !hitActive) {
+            return null
         }
+
+        val isKill = killActive
+        val remain = if (isKill) remainKillTime else remainHitTime
+        val progress = (remain.toFloat() / HIT_MARKER_KEEP_TIME_MS).coerceIn(0f, 1f)
+        val headShot = remainHeadShotTime in 0..HIT_MARKER_KEEP_TIME_MS
+
+        // 前半段保持满亮，后半段线性淡出，避免刚命中就开始掉透明度。
+        val alpha = if (progress < 0.5f) 1f else (1f - (progress - 0.5f) / 0.5f)
+        // 外扩走 ease-out：起步快、收尾慢。
+        val easeOut = 1f - (1f - progress) * (1f - progress)
+        val offset = startPosition + easeOut * 4f
+        // 弹出回弹：刚触发略放大并随进度回落，击杀再大一档。
+        val popAmount = if (isKill) 0.22f else 0.15f
+        val scale = 1f + (1f - progress) * popAmount
+
         return HitMarkerSnapshot(
             offset = offset,
-            alpha = (1.0f - fadeTime.toFloat() / HIT_MARKER_KEEP_TIME_MS).coerceIn(0.0f, 1.0f),
-            headShotTint = remainHeadShotTime <= HIT_MARKER_KEEP_TIME_MS,
+            alpha = alpha,
+            headShotTint = headShot,
+            isKill = isKill,
+            progress = progress,
+            scale = scale,
         )
     }
 

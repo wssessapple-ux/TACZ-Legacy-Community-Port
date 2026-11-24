@@ -3,7 +3,8 @@ package com.tacz.legacy.client.gui
 import com.tacz.legacy.common.block.entity.ChunkLoaderTileEntity
 import com.tacz.legacy.common.inventory.ChunkLoaderContainer
 import com.tacz.legacy.common.network.TACZNetworkHandler
-import com.tacz.legacy.common.network.message.client.ClientMessageChunkLoaderCycle
+import com.tacz.legacy.common.network.message.client.ClientMessageChunkLoaderMode
+import com.tacz.legacy.common.network.message.client.ClientMessageChunkLoaderSelect
 import net.minecraft.client.gui.GuiButton
 import net.minecraft.client.gui.inventory.GuiContainer
 import net.minecraft.client.renderer.GlStateManager
@@ -23,25 +24,59 @@ internal class ChunkLoaderScreen(
         ySize = 120
     }
 
-    private lateinit var cycleButton: GuiButton
+    private val ranges: IntArray get() = ChunkLoaderTileEntity.RANGES
+
+    private lateinit var modeButton: GuiButton
 
     override fun initGui() {
         super.initGui()
-        cycleButton = GuiButton(
-            0,
-            guiLeft + 58,
-            guiTop + 76,
-            60,
+        val btnWidth = 52
+        val gap = 7
+        val startX = guiLeft + 3
+        ranges.forEachIndexed { index, range ->
+            val button = GuiButton(
+                10 + index,
+                startX + index * (btnWidth + gap),
+                guiTop + 68,
+                btnWidth,
+                20,
+                "${range}×${range}",
+            )
+            buttonList.add(button)
+        }
+        modeButton = GuiButton(
             20,
-            I18n.format("gui.tacz.chunk_loader.cycle"),
+            guiLeft + 38,
+            guiTop + 92,
+            100,
+            20,
+            "",
         )
-        buttonList.add(cycleButton)
+        buttonList.add(modeButton)
     }
 
     override fun actionPerformed(button: GuiButton) {
-        if (button.id == 0) {
-            TACZNetworkHandler.sendToServer(ClientMessageChunkLoaderCycle(menu.windowId))
+        if (button.id == 20) {
+            val current = menu.tile?.mode ?: ChunkLoaderTileEntity.MODE_REDSTONE
+            val next = if (current == ChunkLoaderTileEntity.MODE_ALWAYS_ON) {
+                ChunkLoaderTileEntity.MODE_REDSTONE
+            } else {
+                ChunkLoaderTileEntity.MODE_ALWAYS_ON
+            }
+            TACZNetworkHandler.sendToServer(ClientMessageChunkLoaderMode(menu.windowId, next))
+            return
         }
+        val index = button.id - 10
+        if (index < 0 || index >= ranges.size) return
+        TACZNetworkHandler.sendToServer(ClientMessageChunkLoaderSelect(menu.windowId, ranges[index]))
+    }
+
+    /** 客户端归属预判：无主 / 本人 / OP / 创造；硬校验在服务端报文里。 */
+    private fun hasAccess(): Boolean {
+        val te = menu.tile ?: return true
+        val player = mc.player ?: return true
+        val uuid = te.ownerUuid ?: return true
+        return player.uniqueID == uuid || player.canUseCommand(1, "") || player.capabilities.isCreativeMode
     }
 
     override fun drawGuiContainerBackgroundLayer(partialTicks: Float, mouseX: Int, mouseY: Int) {
@@ -88,7 +123,7 @@ internal class ChunkLoaderScreen(
         fontRenderer.drawStringWithShadow(status, 22f, 33f, statusColor)
 
         // 拥有者
-        val owner = te?.owner ?: "—"
+        val owner = te?.ownerName ?: "—"
         fontRenderer.drawStringWithShadow(
             I18n.format("gui.tacz.chunk_loader.owner", owner),
             10f,
@@ -101,6 +136,27 @@ internal class ChunkLoaderScreen(
             I18n.format("gui.tacz.chunk_loader.pos", it.x, it.y, it.z)
         } ?: "—"
         fontRenderer.drawStringWithShadow(posText, 10f, 59f, 0xFF9CA4B2.toInt())
+
+        // 档位按钮：当前档禁用（高亮态），无权限全部禁用
+        val access = hasAccess()
+        buttonList.filter { it.id != 20 }.forEachIndexed { index, button ->
+            val target = ranges[index]
+            button.enabled = access && target != range
+            button.displayString = "${target}×${target}"
+        }
+
+        // 模式按钮：显示当前模式，无权限禁用
+        val mode = te?.mode ?: ChunkLoaderTileEntity.MODE_REDSTONE
+        val modeKey = if (mode == ChunkLoaderTileEntity.MODE_ALWAYS_ON) {
+            "gui.tacz.chunk_loader.mode_always_on"
+        } else {
+            "gui.tacz.chunk_loader.mode_redstone"
+        }
+        modeButton.displayString = I18n.format(
+            "gui.tacz.chunk_loader.mode_label",
+            I18n.format(modeKey),
+        )
+        modeButton.enabled = access
 
         // 底部版权署名（居中，暗灰）
         val copyright = I18n.format("gui.tacz.chunk_loader.copyright")

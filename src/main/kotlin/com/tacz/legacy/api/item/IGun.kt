@@ -20,6 +20,9 @@ public interface IGun {
     public fun getFireMode(stack: ItemStack): FireMode
     public fun setFireMode(stack: ItemStack, fireMode: FireMode?)
 
+    /** 持该枪是否允许趴下射击（读枪械数据 `can_crawl`，无数据返回 false）。 */
+    public fun isCanCrawl(stack: ItemStack): Boolean
+
     public fun getCurrentAmmoCount(stack: ItemStack): Int
     public fun setCurrentAmmoCount(stack: ItemStack, ammoCount: Int)
     public fun reduceCurrentAmmoCount(stack: ItemStack)

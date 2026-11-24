@@ -2,15 +2,18 @@ package com.tacz.legacy.common.block.entity
 
 import com.tacz.legacy.TACZLegacy
 import com.tacz.legacy.api.DefaultAssets
+import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NBTTagCompound
 import net.minecraft.tileentity.TileEntity
 import net.minecraft.util.ITickable
 import net.minecraft.util.ResourceLocation
+import net.minecraft.util.math.AxisAlignedBB
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.ChunkPos
 import net.minecraftforge.common.ForgeChunkManager
 import net.minecraftforge.fml.common.registry.GameRegistry
+import java.util.UUID
 
 internal object LegacyBlockEntities {
     private var registered: Boolean = false
@@ -117,42 +120,83 @@ internal class StatueTileEntity : TileEntity() {
  * modData 里记录的坐标挂回本 TE。
  */
 internal class ChunkLoaderTileEntity : TileEntity(), ITickable {
-    internal var owner: String? = null
+    /** 归属 UUID，守门依据；null 表示无主（旧存档/创造放置），不锁定操作。 */
+    internal var ownerUuid: UUID? = null
+    /** 归属显示名，仅用于面板展示；改名不影响守门。 */
+    internal var ownerName: String? = null
     internal var range: Int = DEFAULT_RANGE
+    internal var mode: Int = MODE_REDSTONE
     internal var active: Boolean = false
 
     /** 运行时票引用，不写 NBT。 */
     private var ticket: ForgeChunkManager.Ticket? = null
 
-    /** 循环切换到下一个范围档位，返回切换后的档位。 */
-    internal fun cycleRange(): Int {
-        val current = RANGES.indexOf(range).let { if (it < 0) RANGES.indexOf(DEFAULT_RANGE) else it }
-        range = RANGES[(current + 1) % RANGES.size]
-        markDirty()
-        val w = world ?: return range
-        if (ticket != null) {
-            syncChunks()
+    /** 是否允许该玩家操作本加载器：无主 / 本人 / OP / 创造。 */
+    internal fun hasAccess(player: EntityPlayer): Boolean {
+        val uuid = ownerUuid ?: return true
+        if (player.uniqueID == uuid) return true
+        return player.canUseCommand(1, "") || player.capabilities.isCreativeMode
+    }
+
+    /**
+     * 视锥剔除用的渲染包围盒：默认只有 1 格，会把延伸到几十格的范围线框误剔掉。
+     * 激活时返回覆盖整个线框范围的大盒；未激活退回默认小盒。
+     */
+    override fun getRenderBoundingBox(): AxisAlignedBB {
+        if (!active) return super.getRenderBoundingBox()
+        val hw = effectiveRange() * 8
+        return AxisAlignedBB(
+            (pos.x - hw).toDouble(), (pos.y - 2).toDouble(), (pos.z - hw).toDouble(),
+            (pos.x + 1 + hw).toDouble(), (pos.y + 4).toDouble(), (pos.z + 1 + hw).toDouble(),
+        )
+    }
+
+    /** 直接选定档位，目标档在档位表内才生效，返回当前档位。 */
+    internal fun setRange(target: Int): Int {
+        if (target in RANGES && target != range) {
+            range = target
+            markDirty()
+            val w = world
+            if (ticket != null) {
+                syncChunks()
+            }
+            if (w != null) {
+                val state = w.getBlockState(pos)
+                w.notifyBlockUpdate(pos, state, state, 3)
+            }
         }
-        val state = w.getBlockState(pos)
-        w.notifyBlockUpdate(pos, state, state, 3)
         return range
     }
 
-    /** 每 tick 核对红石信号，通断变化时刷新票状态。 */
+    /** 切换工作模式：红石控制 / 常开；目标模式合法才生效，返回当前模式。 */
+    internal fun setMode(target: Int): Int {
+        if ((target == MODE_REDSTONE || target == MODE_ALWAYS_ON) && target != mode) {
+            mode = target
+            markDirty()
+            refresh()
+        }
+        return mode
+    }
+
+    /** 每 tick 核对激活条件；常开模式忽略红石信号。 */
     override fun update() {
         if (world == null || world.isRemote) return
+        if (mode == MODE_ALWAYS_ON) {
+            if (!active) refresh()
+            return
+        }
         val powered = world.isBlockPowered(pos)
         if (powered != active) {
             refresh()
         }
     }
 
-    /** 按当前红石信号刷新票：有信号申请票并 force 区块，无信号释放。 */
+    /** 按当前模式与红石信号刷新票：满足条件申请票并 force 区块，否则释放。 */
     internal fun refresh() {
         if (world == null || world.isRemote) return
-        val powered = world.isBlockPowered(pos)
-        if (powered == active && ticket != null) return
-        active = powered
+        val shouldActive = mode == MODE_ALWAYS_ON || world.isBlockPowered(pos)
+        if (shouldActive == active && ticket != null) return
+        active = shouldActive
         if (active) {
             ensureTicket()
         } else {
@@ -210,6 +254,9 @@ internal class ChunkLoaderTileEntity : TileEntity(), ITickable {
         return RANGES.lastOrNull { it * it <= depth } ?: MIN_RANGE
     }
 
+    /** 供客户端渲染读取实际生效档位（区块边长）。 */
+    internal fun renderSide(): Int = effectiveRange()
+
     private fun chunkList(): List<ChunkPos> {
         val side = effectiveRange()
         val center = ChunkPos(pos)
@@ -225,15 +272,23 @@ internal class ChunkLoaderTileEntity : TileEntity(), ITickable {
 
     override fun readFromNBT(compound: NBTTagCompound): Unit {
         super.readFromNBT(compound)
-        owner = compound.getString("Owner").takeIf { it.isNotEmpty() }
+        ownerName = compound.getString("OwnerName").ifEmpty {
+            compound.getString("Owner").ifEmpty { "" }
+        }.ifEmpty { null }
+        ownerUuid = if (compound.hasKey("OwnerUuid")) {
+            runCatching { UUID.fromString(compound.getString("OwnerUuid")) }.getOrNull()
+        } else null
         range = compound.getInteger("Range").let { if (it in MIN_RANGE..MAX_RANGE) it else DEFAULT_RANGE }
+        mode = compound.getInteger("Mode").let { if (it == MODE_ALWAYS_ON) MODE_ALWAYS_ON else MODE_REDSTONE }
         active = compound.getBoolean("Active")
     }
 
     override fun writeToNBT(compound: NBTTagCompound): NBTTagCompound {
         val tag = super.writeToNBT(compound)
-        owner?.let { tag.setString("Owner", it) }
+        ownerUuid?.let { tag.setString("OwnerUuid", it.toString()) }
+        ownerName?.let { tag.setString("OwnerName", it) }
         tag.setInteger("Range", range)
+        tag.setInteger("Mode", mode)
         tag.setBoolean("Active", active)
         return tag
     }
@@ -255,5 +310,10 @@ internal class ChunkLoaderTileEntity : TileEntity(), ITickable {
         const val DEFAULT_RANGE = 5
         const val MAX_RANGE = 8
         val RANGES: IntArray = intArrayOf(MIN_RANGE, DEFAULT_RANGE, MAX_RANGE)
+
+        /** 模式：红石信号控制通断。 */
+        const val MODE_REDSTONE = 0
+        /** 模式：放下即常开，忽略红石信号。 */
+        const val MODE_ALWAYS_ON = 1
     }
 }

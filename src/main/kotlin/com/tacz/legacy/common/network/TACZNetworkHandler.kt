@@ -37,9 +37,11 @@ public object TACZNetworkHandler {
         registerC2S<ClientMessagePlayerMelee>()
         registerC2S<ClientMessagePlayerFireSelect>()
         registerC2S<ClientMessageSyncBaseTimestamp>()
-        registerC2S<ClientMessageChunkLoaderCycle>()
+        registerC2S<ClientMessageChunkLoaderSelect>()
+        registerC2S<ClientMessageChunkLoaderMode>()
         registerC2S<ClientMessageFpvControl>()
         registerC2S<ClientMessageFpvExit>()
+        registerC2S<ClientMessageFpvReturn>()
 
         // Server -> Client (events)
         registerS2C(ServerMessageGunShoot.Handler::class.java, ServerMessageGunShoot::class.java)
@@ -55,6 +57,7 @@ public object TACZNetworkHandler {
         registerS2C(ServerMessageSyncBaseTimestamp.Handler::class.java, ServerMessageSyncBaseTimestamp::class.java)
         registerS2C(ServerMessageShootState.Handler::class.java, ServerMessageShootState::class.java)
         registerS2C(ServerMessageFpvControlState.Handler::class.java, ServerMessageFpvControlState::class.java)
+        registerS2C(ServerMessageFpvReturnState.Handler::class.java, ServerMessageFpvReturnState::class.java)
     }
 
     /**

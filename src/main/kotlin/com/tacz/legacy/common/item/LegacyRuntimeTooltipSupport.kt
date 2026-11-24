@@ -11,6 +11,9 @@ import com.tacz.legacy.common.config.LegacyConfigManager
 import com.tacz.legacy.common.resource.BoltType
 import com.tacz.legacy.common.resource.GunCombatData
 import com.tacz.legacy.common.resource.GunDataAccessor
+import com.tacz.legacy.common.resource.TACZGunPropertyResolver
+import com.tacz.legacy.common.resource.TACZGunDataDefinition
+import com.tacz.legacy.common.resource.TACZAttachmentModifierRegistry
 import com.tacz.legacy.common.resource.TACZAmmoIndexDefinition
 import com.tacz.legacy.common.resource.TACZAttachmentIndexDefinition
 import com.tacz.legacy.common.resource.TACZBlockIndexDefinition
@@ -23,6 +26,7 @@ import net.minecraft.nbt.NBTTagCompound
 import net.minecraft.util.ResourceLocation
 import net.minecraft.util.text.TextFormatting
 import net.minecraft.util.text.translation.I18n
+import kotlin.math.roundToInt
 import java.text.DecimalFormat
 import java.util.Locale
 
@@ -168,10 +172,10 @@ internal object LegacyRuntimeTooltipSupport {
             appendGunAmmoInfo(stack, iGun, gunData, tooltip)
         }
         if (loadedGun != null && !isHidden(hideFlags, GunTooltipPart.BASE_INFO)) {
-            appendGunBaseInfo(stack, iGun, loadedGun.index, loadedGun.data.raw, tooltip)
+            appendGunBaseInfo(stack, iGun, loadedGun.index, loadedGun.data, gunData, tooltip)
         }
         if (loadedGun != null && !isHidden(hideFlags, GunTooltipPart.EXTRA_DAMAGE_INFO)) {
-            appendExtraDamageInfo(loadedGun.data.raw, tooltip)
+            appendExtraDamageInfo(stack, iGun, gunData, tooltip)
         }
         if (loadedGun != null && !isHidden(hideFlags, GunTooltipPart.PACK_INFO)) {
             appendPackInfo(gunId, tooltip)
@@ -201,7 +205,8 @@ internal object LegacyRuntimeTooltipSupport {
         stack: ItemStack,
         iGun: IGun,
         gunIndex: TACZGunIndexDefinition,
-        raw: JsonObject,
+        data: TACZGunDataDefinition,
+        gunData: GunCombatData?,
         tooltip: MutableList<String>,
     ): Unit {
         val fireModeLabel = localizedLabel("gui.tacz.gun_refit.property_diagrams.fire_mode", "Fire Mode: ")
@@ -210,36 +215,92 @@ internal object LegacyRuntimeTooltipSupport {
         val typeText = gunTypeText(gunIndex.type)
         val currentFireMode = fireModeText(iGun.getFireMode(stack))
         tooltip += "${TextFormatting.DARK_GRAY}$fireModeLabel$currentFireMode"
-        raw.intValue("rpm").takeIf { it > 0 }?.let { rpm ->
-            tooltip += "${TextFormatting.DARK_GRAY}$rpmLabel: ${TextFormatting.GRAY}$rpm"
-        }
-        raw.floatValue("weight").takeIf { it > 0f }?.let { weight ->
-            tooltip += "${TextFormatting.DARK_GRAY}$weightLabel: ${TextFormatting.GRAY}${WEIGHT_FORMAT.format(weight)}"
+
+        if (gunData != null) {
+            // 与改装窗口同一口径：基准值取 gunData + 开火模式微调，再 eval 已装配件 modifier。
+            val adjust = gunData.fireModeAdjusts[iGun.getFireMode(stack)] ?: TACZGunPropertyResolver.FireModeAdjust()
+            val rpmBase = (gunData.roundsPerMinute + adjust.rpm).coerceAtLeast(0)
+            val rpmFinal = evalGunStat(stack, iGun, "rpm", rpmBase.toDouble()).roundToInt()
+            if (rpmFinal > 0) {
+                tooltip += "${TextFormatting.DARK_GRAY}$rpmLabel: ${TextFormatting.GRAY}$rpmFinal"
+            }
+            val weightFinal = evalGunStat(stack, iGun, "weight_modifier", data.weight.toDouble()).toFloat()
+            if (weightFinal > 0f) {
+                tooltip += "${TextFormatting.DARK_GRAY}$weightLabel: ${TextFormatting.GRAY}${WEIGHT_FORMAT.format(weightFinal)}"
+            }
+        } else {
+            // 枪包战斗数据缺失时回退到枪包 raw 原始值展示。
+            data.raw.intValue("rpm").takeIf { it > 0 }?.let { rpm ->
+                tooltip += "${TextFormatting.DARK_GRAY}$rpmLabel: ${TextFormatting.GRAY}$rpm"
+            }
+            data.raw.floatValue("weight").takeIf { it > 0f }?.let { weight ->
+                tooltip += "${TextFormatting.DARK_GRAY}$weightLabel: ${TextFormatting.GRAY}${WEIGHT_FORMAT.format(weight)}"
+            }
         }
         if (typeText.isNotBlank()) {
             tooltip += "${TextFormatting.DARK_GRAY}$typeText"
         }
     }
 
-    private fun appendExtraDamageInfo(raw: JsonObject, tooltip: MutableList<String>): Unit {
-        val bullet = raw.get("bullet")?.takeIf { it.isJsonObject }?.asJsonObject ?: return
-        val damage = bullet.floatValue("damage")
-        val extraDamage = bullet.get("extra_damage")?.takeIf { it.isJsonObject }?.asJsonObject
-        val armorIgnore = extraDamage?.floatValue("armor_ignore") ?: 0f
-        val headShot = extraDamage?.floatValue("head_shot_multiplier") ?: 0f
+    private fun appendExtraDamageInfo(
+        stack: ItemStack,
+        iGun: IGun,
+        gunData: GunCombatData?,
+        tooltip: MutableList<String>,
+    ): Unit {
         val damageLabel = localizedLabel("gui.tacz.gun_refit.property_diagrams.damage", "Damage")
         val armorIgnoreLabel = localizedLabel("gui.tacz.gun_refit.property_diagrams.armor_ignore", "AP Ratio")
         val headShotLabel = localizedLabel("gui.tacz.gun_refit.property_diagrams.head_shot", "Headshot")
 
-        if (damage > 0f) {
-            tooltip += "${TextFormatting.DARK_GRAY}$damageLabel: ${TextFormatting.GRAY}${DAMAGE_FORMAT.format(damage)}"
+        if (gunData != null) {
+            // 与改装窗口同一口径：基准值取子弹战斗数据 + 开火模式微调，再 eval 已装配件 modifier。
+            val adjust = gunData.fireModeAdjusts[iGun.getFireMode(stack)] ?: TACZGunPropertyResolver.FireModeAdjust()
+            val bullet = gunData.bulletData
+            val extra = bullet.extraDamageData
+            val damageFinal = evalGunStat(stack, iGun, "damage", (bullet.damage + adjust.damage).toDouble()).toFloat()
+            val armorIgnoreFinal = evalGunStat(
+                stack, iGun, "armor_ignore",
+                ((extra?.armorIgnore ?: 0f) + adjust.armorIgnore).toDouble(),
+            ).toFloat()
+            val headShotFinal = evalGunStat(
+                stack, iGun, "head_shot",
+                ((extra?.headShotMultiplier ?: 1f) + adjust.headShot).toDouble(),
+            ).toFloat()
+
+            if (damageFinal > 0f) {
+                tooltip += "${TextFormatting.DARK_GRAY}$damageLabel: ${TextFormatting.GRAY}${DAMAGE_FORMAT.format(damageFinal)}"
+            }
+            if (armorIgnoreFinal > 0f) {
+                tooltip += "${TextFormatting.DARK_GRAY}$armorIgnoreLabel: ${TextFormatting.GRAY}${DAMAGE_FORMAT.format(armorIgnoreFinal * 100f)}%"
+            }
+            if (headShotFinal > 0f) {
+                tooltip += "${TextFormatting.DARK_GRAY}$headShotLabel: ${TextFormatting.GRAY}x${DAMAGE_FORMAT.format(headShotFinal)}"
+            }
+        } else {
+            val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
+            val bullet = snapshot.guns[iGun.getGunId(stack)]?.data?.raw
+                ?.get("bullet")?.takeIf { it.isJsonObject }?.asJsonObject ?: return
+            val damage = bullet.floatValue("damage")
+            val extraDamage = bullet.get("extra_damage")?.takeIf { it.isJsonObject }?.asJsonObject
+            val armorIgnore = extraDamage?.floatValue("armor_ignore") ?: 0f
+            val headShot = extraDamage?.floatValue("head_shot_multiplier") ?: 0f
+            if (damage > 0f) {
+                tooltip += "${TextFormatting.DARK_GRAY}$damageLabel: ${TextFormatting.GRAY}${DAMAGE_FORMAT.format(damage)}"
+            }
+            if (armorIgnore > 0f) {
+                tooltip += "${TextFormatting.DARK_GRAY}$armorIgnoreLabel: ${TextFormatting.GRAY}${DAMAGE_FORMAT.format(armorIgnore * 100f)}%"
+            }
+            if (headShot > 0f) {
+                tooltip += "${TextFormatting.DARK_GRAY}$headShotLabel: ${TextFormatting.GRAY}x${DAMAGE_FORMAT.format(headShot)}"
+            }
         }
-        if (armorIgnore > 0f) {
-            tooltip += "${TextFormatting.DARK_GRAY}$armorIgnoreLabel: ${TextFormatting.GRAY}${DAMAGE_FORMAT.format(armorIgnore * 100f)}%"
-        }
-        if (headShot > 0f) {
-            tooltip += "${TextFormatting.DARK_GRAY}$headShotLabel: ${TextFormatting.GRAY}x${DAMAGE_FORMAT.format(headShot)}"
-        }
+    }
+
+    /** 收集枪上已装配件对某属性的 modifier 并 eval 到基准值上（GUI 与 tooltip 共用同一实现）。 */
+    private fun evalGunStat(stack: ItemStack, iGun: IGun, key: String, base: Double): Double {
+        val modifiers = TACZGunPropertyResolver.collectGunNumericModifiers(stack, iGun, key)
+        if (modifiers.isEmpty()) return base
+        return TACZAttachmentModifierRegistry.evalNumeric(modifiers, base)
     }
 
     private fun appendPackInfo(gunId: ResourceLocation, tooltip: MutableList<String>): Unit {

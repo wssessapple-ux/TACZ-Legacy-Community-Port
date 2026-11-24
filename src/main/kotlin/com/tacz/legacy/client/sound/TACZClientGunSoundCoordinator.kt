@@ -131,7 +131,7 @@ internal object TACZClientGunSoundCoordinator {
         GunSoundPlayManager.playClientSound(
             entity,
             display?.getSound(SoundManager.HEAD_HIT_SOUND),
-            1.0f,
+            0.85f,
             1.0f,
             LegacyConfigManager.common.defaultGunOtherSoundDistance,
         )
@@ -141,7 +141,7 @@ internal object TACZClientGunSoundCoordinator {
         GunSoundPlayManager.playClientSound(
             entity,
             display?.getSound(SoundManager.FLESH_HIT_SOUND),
-            1.0f,
+            0.7f,
             1.0f,
             LegacyConfigManager.common.defaultGunOtherSoundDistance,
         )
@@ -151,7 +151,7 @@ internal object TACZClientGunSoundCoordinator {
         GunSoundPlayManager.playClientSound(
             entity,
             display?.getSound(SoundManager.KILL_SOUND),
-            1.0f,
+            0.9f,
             1.0f,
             LegacyConfigManager.common.defaultGunOtherSoundDistance,
         )

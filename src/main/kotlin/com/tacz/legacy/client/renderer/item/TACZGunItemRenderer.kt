@@ -43,6 +43,7 @@ import java.nio.FloatBuffer
 internal object TACZGunItemRenderer : TileEntityItemStackRenderer() {
     private val SLOT_MODEL = SlotModel()
     private val POSITIONING_BUFFER: FloatBuffer = BufferUtils.createFloatBuffer(16)
+    private val fallbackModelCache = LinkedHashMap<ResourceLocation, BedrockModel>()
 
     override fun renderByItem(stack: ItemStack) {
         renderByItem(stack, 1.0f)
@@ -122,7 +123,8 @@ internal object TACZGunItemRenderer : TileEntityItemStackRenderer() {
         val fallbackModel = if (runtimeModel == null) {
             val modelLocation: ResourceLocation = display.modelLocation ?: return
             val modelData = TACZClientAssetManager.getModel(modelLocation) ?: return
-            BedrockModel(modelData.pojo, modelData.version)
+            // 静态几何无每帧可变状态，按模型位置缓存复用，避免每渲染帧 new BedrockModel
+            fallbackModelCache.getOrPut(modelLocation) { BedrockModel(modelData.pojo, modelData.version) }
         } else {
             null
         }

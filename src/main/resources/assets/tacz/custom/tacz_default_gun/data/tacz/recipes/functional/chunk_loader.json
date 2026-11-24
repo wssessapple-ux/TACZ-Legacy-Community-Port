@@ -1,0 +1,36 @@
+{
+  "materials": [
+    {
+      "item": {
+        "item": "minecraft:iron_ingot"
+      },
+      "count": 6
+    },
+    {
+      "item": {
+        "item": "minecraft:redstone"
+      },
+      "count": 4
+    },
+    {
+      "item": {
+        "item": "minecraft:quartz"
+      },
+      "count": 2
+    },
+    {
+      "item": {
+        "item": "minecraft:glass_pane"
+      },
+      "count": 2
+    }
+  ],
+  "result": {
+    "type": "custom",
+    "group": "misc",
+    "item": {
+      "item": "tacz:chunk_loader"
+    }
+  },
+  "type": "tacz:gun_smith_table_crafting"
+}

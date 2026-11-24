@@ -25,10 +25,11 @@ internal class ChunkLoaderContainer(
     }
 
     override fun canInteractWith(playerIn: EntityPlayer): Boolean {
-        if (world.getTileEntity(blockPos) !is ChunkLoaderTileEntity) {
+        val tile = world.getTileEntity(blockPos) as? ChunkLoaderTileEntity ?: return false
+        if (playerIn.getDistanceSq(blockPos.x + 0.5, blockPos.y + 0.5, blockPos.z + 0.5) > 64.0) {
             return false
         }
-        return playerIn.getDistanceSq(blockPos.x + 0.5, blockPos.y + 0.5, blockPos.z + 0.5) <= 64.0
+        return tile.hasAccess(playerIn)
     }
 
     override fun transferStackInSlot(playerIn: EntityPlayer, index: Int): ItemStack = ItemStack.EMPTY

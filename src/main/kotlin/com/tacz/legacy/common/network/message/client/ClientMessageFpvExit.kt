@@ -43,7 +43,7 @@ public class ClientMessageFpvExit() : IMessage, IMessageHandler<ClientMessageFpv
         val player: EntityPlayerMP = ctx.serverHandler.player
         player.serverWorld.addScheduledTask {
             val drone = player.serverWorld.getEntityByID(message.droneId) as? EntityFpvDrone
-            if (drone == null || !drone.isOwner(player) || !drone.isControlled()) {
+            if (drone == null || !drone.isOwner(player) || (!drone.isControlled() && !drone.isReturning())) {
                 // 受控态已不在（看门狗解除/实体失效）：仍回 detach 通知让客户端切回本体，
                 // 避免客户端卡在视角里干等退出回包。
                 TACZNetworkHandler.sendToPlayer(ServerMessageFpvControlState(message.droneId, controlled = false), player)

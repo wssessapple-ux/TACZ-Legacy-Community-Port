@@ -26,6 +26,7 @@ internal object TACZGunPropertyResolver {
         val ammoSpeed: Float = 0f,
         val armorIgnore: Float = 0f,
         val headShot: Float = 0f,
+        val knockback: Float = 0f,
         val aimInaccuracy: Float = 0f,
         val otherInaccuracy: Float = 0f,
     )
@@ -273,6 +274,7 @@ internal object TACZGunPropertyResolver {
             ammoSpeed = adjustObject.floatValue("speed"),
             armorIgnore = adjustObject.floatValue("armor_ignore"),
             headShot = adjustObject.floatValue("head_shot_multiplier"),
+            knockback = adjustObject.floatValue("knockback"),
             aimInaccuracy = adjustObject.floatValue("aim_inaccuracy"),
             otherInaccuracy = adjustObject.floatValue("other_inaccuracy"),
         )

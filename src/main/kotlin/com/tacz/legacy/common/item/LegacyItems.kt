@@ -13,6 +13,7 @@ import com.tacz.legacy.common.block.LegacyBlocks
 import com.tacz.legacy.common.block.entity.GunSmithTableTileEntity
 import com.tacz.legacy.common.config.LegacyConfigManager
 import com.tacz.legacy.common.entity.EntityFpvDrone
+import com.tacz.legacy.common.entity.EntityGrenade
 import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.event.ServerMessageFpvControlState
 import com.tacz.legacy.common.resource.BoltType
@@ -22,13 +23,18 @@ import com.tacz.legacy.common.resource.TACZGunPackRuntimeRegistry
 import com.tacz.legacy.common.registry.LegacyCreativeTabs
 import com.tacz.legacy.common.gui.LegacyGuiIds
 import net.minecraft.block.state.IBlockState
-import net.minecraft.client.resources.I18n
+import net.minecraft.util.text.translation.I18n
 import net.minecraft.client.util.ITooltipFlag
 import net.minecraft.creativetab.CreativeTabs
+import net.minecraft.entity.Entity
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.entity.player.EntityPlayerMP
+import net.minecraft.init.Items
+import net.minecraft.init.SoundEvents
+import net.minecraft.inventory.EntityEquipmentSlot
 import net.minecraft.item.Item
+import net.minecraft.item.ItemArmor
 import net.minecraft.item.ItemBlock
 import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NBTTagCompound
@@ -46,6 +52,7 @@ import net.minecraftforge.items.IItemHandler
 import net.minecraftforge.items.IItemHandlerModifiable
 import net.minecraftforge.fml.relauncher.Side
 import net.minecraftforge.fml.relauncher.SideOnly
+import net.minecraftforge.common.util.EnumHelper
 import net.minecraftforge.registries.IForgeRegistry
 import net.minecraft.world.World
 
@@ -55,9 +62,15 @@ internal object LegacyItems {
     internal val ATTACHMENT: AttachmentItem = AttachmentItem().named("attachment", LegacyCreativeTabs.PARTS)
     internal val AMMO_BOX: AmmoBoxItem = AmmoBoxItem().named("ammo_box", LegacyCreativeTabs.OTHER)
     internal val TARGET_MINECART: LegacySimpleItem = LegacySimpleItem(maxStackSize = 1).named("target_minecart", LegacyCreativeTabs.OTHER)
-    internal val DRONE_CIVILIAN: DroneItem = DroneItem(isMilitary = false).named("drone_civilian", LegacyCreativeTabs.OTHER)
-    internal val DRONE_MILITARY: DroneItem = DroneItem(isMilitary = true).named("drone_military", LegacyCreativeTabs.OTHER)
-    internal val FPV_DRONE: FpvDroneItem = FpvDroneItem().named("fpv_drone", LegacyCreativeTabs.OTHER)
+    internal val DRONE_CIVILIAN: DroneItem = DroneItem(isMilitary = false).named("drone_civilian", LegacyCreativeTabs.TACTICAL)
+    internal val DRONE_MILITARY: DroneItem = DroneItem(isMilitary = true).named("drone_military", LegacyCreativeTabs.TACTICAL)
+    internal val FPV_DRONE: FpvDroneItem = FpvDroneItem().named("fpv_drone", LegacyCreativeTabs.TACTICAL)
+    internal val GRENADE: GrenadeItem = GrenadeItem().named("grenade", LegacyCreativeTabs.TACTICAL)
+    internal val BALLISTIC_VEST: BallisticVestItem = BallisticVestItem().named("ballistic_vest", LegacyCreativeTabs.TACTICAL)
+    internal val TAB_ICON: TabIconItem = TabIconItem().apply {
+        registryName = ResourceLocation(TACZLegacy.MOD_ID, "tab_icon")
+        setTranslationKey("${TACZLegacy.MOD_ID}.tab_icon")
+    }
 
     internal val GUN_SMITH_TABLE: LegacyBlockItem = createBlockItem(LegacyBlocks.GUN_SMITH_TABLE)
     internal val WORKBENCH_A: LegacyBlockItem = createBlockItem(LegacyBlocks.WORKBENCH_A)
@@ -76,6 +89,9 @@ internal object LegacyItems {
         DRONE_CIVILIAN,
         DRONE_MILITARY,
         FPV_DRONE,
+        GRENADE,
+        BALLISTIC_VEST,
+        TAB_ICON,
         GUN_SMITH_TABLE,
         WORKBENCH_A,
         WORKBENCH_B,
@@ -504,6 +520,11 @@ internal class ModernKineticGunItem : Item(), IGun {
         ensureTag(stack).setString(IGun.FIRE_MODE_TAG, (fireMode ?: FireMode.UNKNOWN).name)
     }
 
+    /** 对齐上游 AbstractGunItem#isCanCrawl：读枪械数据 can_crawl，无枪械数据返回 false。 */
+    override fun isCanCrawl(stack: ItemStack): Boolean {
+        return GunDataAccessor.getGunData(getGunId(stack))?.canCrawl ?: false
+    }
+
     override fun getCurrentAmmoCount(stack: ItemStack): Int {
         return stack.tagCompound?.getInteger(IGun.AMMO_COUNT_TAG) ?: 0
     }
@@ -868,18 +889,20 @@ internal open class LegacyBlockItem(block: net.minecraft.block.Block) : ItemBloc
 internal class ChunkLoaderBlockItem(block: net.minecraft.block.Block) : LegacyBlockItem(block) {
     init {
         registryName = requireNotNull(block.registryName)
-        setCreativeTab(LegacyCreativeTabs.DECORATION)
+        setCreativeTab(LegacyCreativeTabs.TACTICAL)
     }
 
+    override fun getCreativeTabs(): Array<CreativeTabs> = arrayOf(LegacyCreativeTabs.TACTICAL)
+
     override fun getItemStackDisplayName(stack: ItemStack): String =
-        I18n.format("block.tacz.chunk_loader")
+        I18n.translateToLocalFormatted("block.tacz.chunk_loader")
 
     @SideOnly(Side.CLIENT)
     override fun addInformation(stack: ItemStack, worldIn: World?, tooltip: MutableList<String>, flagIn: ITooltipFlag) {
         super.addInformation(stack, worldIn, tooltip, flagIn)
-        tooltip += "${TextFormatting.GRAY}${I18n.format("tooltip.tacz.chunk_loader.desc")}"
-        tooltip += "${TextFormatting.GRAY}${TextFormatting.ITALIC}${I18n.format("tooltip.tacz.chunk_loader.usage")}"
-        tooltip += "${TextFormatting.DARK_AQUA}${I18n.format("tooltip.tacz.chunk_loader.trait")}"
+        tooltip += "${TextFormatting.GRAY}${I18n.translateToLocalFormatted("tooltip.tacz.chunk_loader.desc")}"
+        tooltip += "${TextFormatting.GRAY}${TextFormatting.ITALIC}${I18n.translateToLocalFormatted("tooltip.tacz.chunk_loader.usage")}"
+        tooltip += "${TextFormatting.DARK_AQUA}${I18n.translateToLocalFormatted("tooltip.tacz.chunk_loader.trait")}"
     }
 }
 
@@ -938,10 +961,10 @@ internal open class DroneItem(private val isMilitary: Boolean) : Item() {
         val descKey = if (isMilitary) "tooltip.tacz.drone_military.desc" else "tooltip.tacz.drone_civilian.desc"
         val traitKey = if (isMilitary) "tooltip.tacz.drone_military.trait" else "tooltip.tacz.drone_civilian.trait"
         val warningKey = if (isMilitary) "tooltip.tacz.drone_military.warning" else "tooltip.tacz.drone_civilian.warning"
-        tooltip += "${TextFormatting.GRAY}${I18n.format(descKey)}"
-        tooltip += "${TextFormatting.GRAY}${TextFormatting.ITALIC}${I18n.format("tooltip.tacz.drone.usage")}"
-        tooltip += "${TextFormatting.DARK_AQUA}${I18n.format(traitKey)}"
-        tooltip += "${TextFormatting.RED}${I18n.format(warningKey)}"
+        tooltip += "${TextFormatting.GRAY}${I18n.translateToLocalFormatted(descKey)}"
+        tooltip += "${TextFormatting.GRAY}${TextFormatting.ITALIC}${I18n.translateToLocalFormatted("tooltip.tacz.drone.usage")}"
+        tooltip += "${TextFormatting.DARK_AQUA}${I18n.translateToLocalFormatted(traitKey)}"
+        tooltip += "${TextFormatting.RED}${I18n.translateToLocalFormatted(warningKey)}"
     }
 
     override fun onItemRightClick(worldIn: World, playerIn: EntityPlayer, handIn: EnumHand): ActionResult<ItemStack> {
@@ -1052,9 +1075,9 @@ internal class FpvDroneItem : Item() {
 
     @SideOnly(Side.CLIENT)
     override fun addInformation(stack: ItemStack, worldIn: World?, tooltip: MutableList<String>, flagIn: ITooltipFlag) {
-        tooltip += "${TextFormatting.GRAY}${I18n.format("tooltip.tacz.fpv_drone.desc")}"
-        tooltip += "${TextFormatting.GRAY}${TextFormatting.ITALIC}${I18n.format("tooltip.tacz.fpv_drone.usage")}"
-        tooltip += "${TextFormatting.DARK_AQUA}${I18n.format("tooltip.tacz.fpv_drone.trait")}"
+        tooltip += "${TextFormatting.GRAY}${I18n.translateToLocalFormatted("tooltip.tacz.fpv_drone.desc")}"
+        tooltip += "${TextFormatting.GRAY}${TextFormatting.ITALIC}${I18n.translateToLocalFormatted("tooltip.tacz.fpv_drone.usage")}"
+        tooltip += "${TextFormatting.DARK_AQUA}${I18n.translateToLocalFormatted("tooltip.tacz.fpv_drone.trait")}"
     }
 
     override fun onItemRightClick(worldIn: World, playerIn: EntityPlayer, handIn: EnumHand): ActionResult<ItemStack> {
@@ -1122,5 +1145,84 @@ internal class FpvDroneItem : Item() {
         ensureTag(stack).setInteger("DroneId", newDrone.entityId)
         playerIn.sendMessage(TextComponentTranslation("message.tacz.fpv.deployed"))
         return ActionResult.newResult(EnumActionResult.SUCCESS, stack)
+    }
+}
+
+/**
+ * frag 破片手雷物品。右键抛出定时引信手雷，落地弹跳，到点 AOE 爆炸；
+ * 不摧毁地形，爆炸会波及投掷者自身。
+ */
+internal class GrenadeItem : Item() {
+    init {
+        maxStackSize = 16
+    }
+
+    @SideOnly(Side.CLIENT)
+    override fun addInformation(stack: ItemStack, worldIn: World?, tooltip: MutableList<String>, flagIn: ITooltipFlag) {
+        tooltip += "${TextFormatting.GRAY}${I18n.translateToLocalFormatted("tooltip.tacz.grenade.desc")}"
+        tooltip += "${TextFormatting.GRAY}${TextFormatting.ITALIC}${I18n.translateToLocalFormatted("tooltip.tacz.grenade.usage")}"
+        tooltip += "${TextFormatting.DARK_AQUA}${I18n.translateToLocalFormatted("tooltip.tacz.grenade.trait")}"
+        tooltip += "${TextFormatting.RED}${I18n.translateToLocalFormatted("tooltip.tacz.grenade.warning")}"
+    }
+
+    override fun onItemRightClick(worldIn: World, playerIn: EntityPlayer, handIn: EnumHand): ActionResult<ItemStack> {
+        val stack = playerIn.getHeldItem(handIn)
+        if (worldIn.isRemote) {
+            return ActionResult.newResult(EnumActionResult.PASS, stack)
+        }
+        val grenade = EntityGrenade(worldIn, playerIn)
+        grenade.shootFromRotation(playerIn)
+        worldIn.spawnEntity(grenade)
+        stack.shrink(1)
+        return ActionResult.newResult(EnumActionResult.SUCCESS, stack)
+    }
+}
+
+/**
+ * 战术防弹背心。占用原版胸甲槽，走原生护甲减免；皮革可在铁砧修理。
+ * 定位重型陶瓷/复合插板：中上护甲值与韧性、较高耐久；穿甲弹（bypassArmor）仍可击穿。
+ */
+internal class BallisticVestItem : ItemArmor(MATERIAL, RENDER_INDEX, EntityEquipmentSlot.CHEST) {
+    companion object {
+        private const val RENDER_INDEX = 0
+
+        // 护甲值数组顺序：靴子 / 腿 / 胸 / 头；本物品只绑胸甲槽，其余槽位恒为 0。
+        private val MATERIAL: ItemArmor.ArmorMaterial = requireNotNull(
+            EnumHelper.addArmorMaterial(
+                "tacz_ballistic_vest",
+                "ballistic_vest",
+                220,
+                intArrayOf(0, 0, 8, 0),
+                9,
+                SoundEvents.ITEM_ARMOR_EQUIP_LEATHER,
+                2.5F,
+            )
+        ).setRepairItem(ItemStack(Items.LEATHER))
+    }
+
+    @SideOnly(Side.CLIENT)
+    override fun addInformation(stack: ItemStack, worldIn: World?, tooltip: MutableList<String>, flagIn: ITooltipFlag) {
+        tooltip += "${TextFormatting.GRAY}${I18n.translateToLocalFormatted("tooltip.tacz.ballistic_vest.desc")}"
+        tooltip += "${TextFormatting.DARK_AQUA}${I18n.translateToLocalFormatted("tooltip.tacz.ballistic_vest.trait")}"
+    }
+
+    // 显式指向 mod 命名空间下的护甲模型贴图，避免默认按材质名回退到 minecraft 路径。
+    override fun getArmorTexture(
+        stack: ItemStack,
+        entity: Entity,
+        slot: EntityEquipmentSlot,
+        type: String,
+    ): String? = "tacz:textures/models/armor/ballistic_vest_layer_1.png"
+}
+
+/**
+ * 创造栏专用隐藏图标物品。
+ * 仅用作 TACTICAL 栏的图标渲染，不进入任何创造栏、JEI 或物品列表，也不可通过常规途径获取。
+ */
+internal class TabIconItem : Item() {
+    override fun getCreativeTabs(): Array<CreativeTabs> = emptyArray()
+
+    override fun getSubItems(tab: CreativeTabs, items: NonNullList<ItemStack>) {
+        // 刻意留空：不向任何物品列表收录
     }
 }

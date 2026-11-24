@@ -1,6 +1,7 @@
 package com.tacz.legacy.common.entity
 
 import io.netty.buffer.ByteBuf
+import com.tacz.legacy.TACZLegacy
 import com.tacz.legacy.common.item.LegacyItems
 import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.event.ServerMessageFpvControlState
@@ -13,8 +14,10 @@ import net.minecraft.nbt.NBTTagCompound
 import net.minecraft.util.DamageSource
 import net.minecraft.util.math.AxisAlignedBB
 import net.minecraft.util.math.BlockPos
+import net.minecraft.util.math.ChunkPos
 import net.minecraft.util.text.TextComponentTranslation
 import net.minecraft.world.World
+import net.minecraftforge.common.ForgeChunkManager
 import net.minecraftforge.fml.common.network.ByteBufUtils
 import net.minecraftforge.fml.common.registry.IEntityAdditionalSpawnData
 import java.util.UUID
@@ -33,6 +36,8 @@ internal class EntityFpvDrone : Entity, IEntityAdditionalSpawnData {
     internal companion object {
         const val STATE_IDLE = 0
         const val STATE_CONTROLLED = 1
+        /** 自主返航中：无视手动输入，分段飞回家人附近，到家悬停待接管。 */
+        const val STATE_RETURNING = 2
 
         /** 水平/垂直飞行速度（格/tick）。 */
         const val SPEED = 0.32
@@ -46,6 +51,13 @@ internal class EntityFpvDrone : Entity, IEntityAdditionalSpawnData {
         const val CONTROL_LOST_TIMEOUT = 60
         /** 速度死区：目标归零后，分量绝对值小于该值直接钳零，避免松手后缓慢漂移。 */
         const val VELOCITY_DEADZONE = 0.01
+
+        /** 返航爬升安全高度：相对主人头顶的抬升格数，越过遮挡后再水平飞。 */
+        const val RETURN_CLEARANCE = 12.0
+        /** 返航到家判定：水平/垂直距离小于该值即悬停。 */
+        const val RETURN_ARRIVE_DIST = 2.5
+        /** 返航超时 tick 数：超时未到家则放弃自主返航，原地悬停。 */
+        const val RETURN_TIMEOUT = 600
 
         /** 机体最大血量（HP）。侦察机脆弱，几发子弹即可击落。 */
         const val MAX_HEALTH = 10f
@@ -81,6 +93,14 @@ internal class EntityFpvDrone : Entity, IEntityAdditionalSpawnData {
     /** 当前机体血量（仅服务端权威；客户端不参与扣血）。 */
     private var health: Float = MAX_HEALTH
 
+    /** 返航启动时的世界 tick，超时兜底用（仅服务端）。 */
+    private var returnStartedTick: Long = 0
+
+    /** 受控飞行期间持有的临时区块票；退出控制/坠毁/卸载时释放。 */
+    private var ticket: ForgeChunkManager.Ticket? = null
+    /** 当前票强制加载的中心区块，跨区块移动后跟随更新。 */
+    private var ticketChunk: ChunkPos? = null
+
     constructor(world: World) : super(world) {
         setSize(0.5f, 0.35f)
     }
@@ -107,6 +127,27 @@ internal class EntityFpvDrone : Entity, IEntityAdditionalSpawnData {
 
     internal fun isControlled(): Boolean = state == STATE_CONTROLLED
 
+    internal fun isReturning(): Boolean = state == STATE_RETURNING
+
+    /** 受控状态发起自主返航；仅受控态可触发，视角保持挂在机上。 */
+    internal fun startReturn(): Boolean {
+        if (state != STATE_CONTROLLED) return false
+        state = STATE_RETURNING
+        returnStartedTick = world.totalWorldTime
+        inputForward = 0f
+        inputStrafe = 0f
+        inputUp = 0f
+        return true
+    }
+
+    /** 返航途中取消，切回手动操控；视角与被控名单保持不变。 */
+    internal fun cancelReturn(): Boolean {
+        if (state != STATE_RETURNING) return false
+        state = STATE_CONTROLLED
+        lastControlTick = world.totalWorldTime
+        return true
+    }
+
     internal fun startControl(player: EntityPlayer): Boolean {
         if (!isOwner(player)) return false
         // 自愈：当前这架并未受控，玩家却还残留在被控名单（上次异常退出没走 stopControl），
@@ -130,6 +171,7 @@ internal class EntityFpvDrone : Entity, IEntityAdditionalSpawnData {
         state = STATE_CONTROLLED
         lastControlTick = world.totalWorldTime
         ownerUuid?.let { addPiloting(it) }
+        ensureTicket()
         return true
     }
 
@@ -146,13 +188,49 @@ internal class EntityFpvDrone : Entity, IEntityAdditionalSpawnData {
         inputStrafe = 0f
         inputUp = 0f
         ownerUuid?.let { removePiloting(it) }
+        releaseTicket()
+    }
+
+    /** 受控飞行期间申请一张临时票，强制加载无人机所在区块及一圈。 */
+    private fun ensureTicket() {
+        if (world == null || world.isRemote || ticket != null) return
+        val t = ForgeChunkManager.requestTicket(TACZLegacy, world, ForgeChunkManager.Type.NORMAL) ?: return
+        t.getModData().setInteger("EntityId", entityId)
+        ticket = t
+        syncTicketChunks()
+    }
+
+    private fun releaseTicket() {
+        val t = ticket ?: return
+        ForgeChunkManager.releaseTicket(t)
+        ticket = null
+        ticketChunk = null
+    }
+
+    /** 跟随无人机位置重新对齐票持有区块：中心 + 一圈（3×3）。 */
+    private fun syncTicketChunks() {
+        val t = ticket ?: return
+        for (chunk in t.chunkList) {
+            ForgeChunkManager.unforceChunk(t, chunk)
+        }
+        val center = ChunkPos(BlockPos(posX, posY, posZ))
+        ticketChunk = center
+        for (dx in -1..1) {
+            for (dz in -1..1) {
+                ForgeChunkManager.forceChunk(t, ChunkPos(center.x + dx, center.z + dz))
+            }
+        }
     }
 
     override fun onRemovedFromWorld() {
         super.onRemovedFromWorld()
-        // 实体被区块卸载/移除世界时兜底释放受控态与被控名单，避免静态残留卡死下次进入。
-        if (!world.isRemote && state == STATE_CONTROLLED) {
-            releaseState()
+        // 实体被区块卸载/移除世界时兜底释放受控态、被控名单与临时票，避免静态残留卡死下次进入。
+        if (!world.isRemote) {
+            if (state == STATE_CONTROLLED) {
+                releaseState()
+            } else {
+                releaseTicket()
+            }
         }
     }
 
@@ -208,9 +286,22 @@ internal class EntityFpvDrone : Entity, IEntityAdditionalSpawnData {
                 inputStrafe = 0f
                 inputUp = 0f
             }
+        } else if (state == STATE_RETURNING) {
+            // 返航态：主人离开/死亡 → 放弃返航悬停；超时未到家 → 放弃自主飞行悬停。
+            if (owner == null || !owner.isEntityAlive) {
+                stopControl(false)
+                notifyControlState(false)
+                return
+            }
+            if (world.totalWorldTime - returnStartedTick > RETURN_TIMEOUT) {
+                stopControl(false)
+                notifyControlState(false)
+                notifyMessage("message.tacz.fpv.return_timeout")
+                return
+            }
         }
 
-        // 目标速度：受控时按输入方向，空闲时归零悬停。
+        // 目标速度：受控时按输入方向，返航时自主朝主人分段飞行，空闲时归零悬停。
         var targetX = 0.0
         var targetY = 0.0
         var targetZ = 0.0
@@ -229,6 +320,44 @@ internal class EntityFpvDrone : Entity, IEntityAdditionalSpawnData {
             targetX = (fwdX * inputForward + rightX * inputStrafe) * SPEED
             targetY = (fwdY * inputForward + inputUp) * SPEED
             targetZ = (fwdZ * inputForward + rightZ * inputStrafe) * SPEED
+        } else if (state == STATE_RETURNING && owner != null) {
+            val ox = owner.posX
+            val hoverY = owner.posY + 1.8
+            val oz = owner.posZ
+            val dx = ox - posX
+            val dz = oz - posZ
+            val horizDist = Math.sqrt(dx * dx + dz * dz)
+            val dy = hoverY - posY
+            val highY = owner.posY + RETURN_CLEARANCE
+
+            // 到家：水平与垂直都贴近主人头顶，悬停待接管。
+            if (horizDist < RETURN_ARRIVE_DIST && Math.abs(dy) < 1.5) {
+                stopControl(false)
+                notifyControlState(false)
+                notifyMessage("message.tacz.fpv.returned_home")
+                return
+            }
+
+            if (horizDist > 0.1) {
+                // 机头转向主人方向。
+                rotationYaw = Math.toDegrees(Math.atan2(-dx, dz)).toFloat()
+            }
+            if (horizDist > 6.0) {
+                // 还远：先爬到安全高度越过遮挡，再高空水平朝主人飞；高度未到位前水平减速。
+                val nx = dx / horizDist
+                val nz = dz / horizDist
+                val climbLerp = if (posY < highY - 1.0) 0.6 else 1.0
+                targetX = nx * SPEED * climbLerp
+                targetZ = nz * SPEED * climbLerp
+                targetY = (highY - posY).coerceIn(-SPEED, SPEED)
+            } else {
+                // 接近主人：垂直下降到悬停高度，水平慢速靠拢。
+                val nx = if (horizDist > 0.1) dx / horizDist else 0.0
+                val nz = if (horizDist > 0.1) dz / horizDist else 0.0
+                targetX = nx * SPEED * 0.5
+                targetZ = nz * SPEED * 0.5
+                targetY = dy.coerceIn(-SPEED, SPEED)
+            }
         }
 
         // 平滑加减速，避免瞬间急刹/急加速；入水时响应更迟钝（水阻）。
@@ -273,6 +402,18 @@ internal class EntityFpvDrone : Entity, IEntityAdditionalSpawnData {
         setPosition(posX, posY, posZ)
         prevRotationYaw = rotationYaw
         prevRotationPitch = rotationPitch
+
+        // 受控/返航跨区块时，临时票跟随重新对齐强制加载范围。
+        if (state == STATE_CONTROLLED || state == STATE_RETURNING) {
+            val center = ChunkPos(BlockPos(posX, posY, posZ))
+            if (center != ticketChunk) syncTicketChunks()
+        }
+    }
+
+    /** 给主人发一条本地化消息（仅服务端）。 */
+    private fun notifyMessage(key: String) {
+        val mp = ownerPlayer() as? EntityPlayerMP ?: return
+        mp.sendMessage(TextComponentTranslation(key))
     }
 
     /** 是否处于水中：手写位移不走 handleWaterMovement，[Entity.isInWater] 不会置位，直接查方块材质。 */

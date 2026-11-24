@@ -78,11 +78,19 @@ internal object LegacyEntities {
         .tracker(64, 1, true)
         .build()
 
+    internal val GRENADE: EntityEntry = EntityEntryBuilder.create<EntityGrenade>()
+        .entity(EntityGrenade::class.java)
+        .id(ResourceLocation(TACZLegacy.MOD_ID, "grenade"), 4)
+        .name("grenade")
+        .tracker(64, 1, false)
+        .build()
+
     internal fun registerAll(registry: IForgeRegistry<EntityEntry>): Unit {
         registry.register(BULLET)
         registry.register(TARGET_MINECART)
         registry.register(DRONE)
         registry.register(FPV_DRONE)
+        registry.register(GRENADE)
     }
 }
 
@@ -228,6 +236,26 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         if (bulletCount > 1) {
             damageModifier = 1.0f / bulletCount
         }
+    }
+
+    // 叠加 fire_mode_adjust.damage 到基础伤害（对齐原版 DamageModifier.initCache：
+    // 距离衰减曲线的每个采样点都要加上该差值，否则有 damage_adjust 曲线的枪会忽略该调整）。
+    internal fun applyFireModeDamageAdjust(delta: Float) {
+        if (delta == 0f) return
+        damage = (damage + delta).coerceAtLeast(0f)
+        for (i in damageAdjust.indices) {
+            damageAdjust[i] = damageAdjust[i].copy(
+                damage = (damageAdjust[i].damage + delta).coerceAtLeast(0f),
+            )
+        }
+    }
+
+    // 叠加 fire_mode_adjust 的 armor_ignore/head_shot_multiplier/knockback（对齐原版 GunFireModeAdjustData）。
+    // knockback 字段照上游留存；命中击退消费点已整体移除，见审计登记。
+    internal fun applyFireModeExtraAdjust(armorIgnoreDelta: Float, headShotDelta: Float, knockbackDelta: Float) {
+        if (armorIgnoreDelta != 0f) armorIgnore = (armorIgnore + armorIgnoreDelta).coerceIn(0f, 1f)
+        if (headShotDelta != 0f) headShotMultiplier = (headShotMultiplier + headShotDelta).coerceAtLeast(0f)
+        if (knockbackDelta != 0f) knockback = (knockback + knockbackDelta).coerceAtLeast(0f)
     }
 
     /** 应用配件点燃 modifier（配件 ignite 覆盖枪械基础点燃属性）。 */
@@ -858,6 +886,9 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
                     logicalSide = Side.SERVER,
                 ),
             )
+            val attackerName = (attacker as? net.minecraft.entity.player.EntityPlayer)?.name ?: ""
+            val killedName = (target as? net.minecraft.entity.player.EntityPlayer)?.name ?: ""
+            val killDistance = attacker?.getDistance(target) ?: 0.0f
             TACZNetworkHandler.sendToDimension(
                 ServerMessageGunKill(
                     bulletId = entityId,
@@ -868,6 +899,9 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
                     baseDamage = feedback.baseDamage,
                     isHeadShot = feedback.headShot,
                     headShotMultiplier = feedback.headShotMultiplier,
+                    attackerName = attackerName,
+                    killedName = killedName,
+                    distance = killDistance,
                 ),
                 world.provider.dimension,
             )

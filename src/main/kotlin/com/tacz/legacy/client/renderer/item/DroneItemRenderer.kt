@@ -8,6 +8,7 @@ import com.tacz.legacy.client.resource.pojo.model.BedrockModelPOJO
 import com.tacz.legacy.client.resource.pojo.model.BedrockVersion
 import com.tacz.legacy.client.resource.pojo.model.CubesItem
 import com.tacz.legacy.common.item.LegacyItems
+import com.tacz.legacy.client.fpv.FpvController
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.GlStateManager
 import net.minecraft.client.renderer.tileentity.TileEntityItemStackRenderer
@@ -27,9 +28,11 @@ import java.nio.charset.StandardCharsets
 internal object DroneItemRenderer : TileEntityItemStackRenderer() {
 
     private const val MODEL_PATH = "assets/${TACZLegacy.MOD_ID}/models/bedrock/drone.json"
+    private const val REMOTE_MODEL_PATH = "assets/${TACZLegacy.MOD_ID}/models/bedrock/fpv_remote.json"
 
     private val civilianTexture = ResourceLocation(TACZLegacy.MOD_ID, "textures/entity/drone_civilian.png")
     private val militaryTexture = ResourceLocation(TACZLegacy.MOD_ID, "textures/entity/drone_military.png")
+    private val remoteTexture = ResourceLocation(TACZLegacy.MOD_ID, "textures/entity/fpv_remote.png")
 
     private val internalModelGson = GsonBuilder()
         .registerTypeAdapter(CubesItem::class.java, CubesItem.Deserializer())
@@ -37,12 +40,19 @@ internal object DroneItemRenderer : TileEntityItemStackRenderer() {
 
     private var model: BedrockModel? = null
     private var modelResolved = false
+    private var remoteModel: BedrockModel? = null
+    private var remoteModelResolved = false
 
     override fun renderByItem(stack: ItemStack) {
         renderByItem(stack, 1.0f)
     }
 
     override fun renderByItem(stack: ItemStack, partialTicks: Float) {
+        // FPV 遥控期间，手里的 FPV 无人机物品换成遥控器模型，营造手持遥控器操控的观感。
+        if (stack.item === LegacyItems.FPV_DRONE && FpvController.isFpvActive()) {
+            renderRemote()
+            return
+        }
         val droneModel = resolveModel() ?: return
         val military = stack.item === LegacyItems.DRONE_MILITARY
         val texture = if (military) militaryTexture else civilianTexture
@@ -70,6 +80,11 @@ internal object DroneItemRenderer : TileEntityItemStackRenderer() {
         GlStateManager.popMatrix()
     }
 
+    /** 遥控器模型：测试阶段停用，FPV 激活时手里不再画遥控器模型。 */
+    private fun renderRemote() {
+        return
+    }
+
     private fun resolveModel(): BedrockModel? {
         if (modelResolved) {
             return model
@@ -93,5 +108,30 @@ internal object DroneItemRenderer : TileEntityItemStackRenderer() {
         }.onFailure { error ->
             TACZLegacy.logger.warn("[DroneItemRenderer] Failed to parse bundled drone model: {}", error.message)
         }.getOrNull().also { model = it }
+    }
+
+    private fun resolveRemoteModel(): BedrockModel? {
+        if (remoteModelResolved) {
+            return remoteModel
+        }
+        remoteModelResolved = true
+        val json = DroneItemRenderer::class.java.classLoader
+            .getResourceAsStream(REMOTE_MODEL_PATH)
+            ?.bufferedReader(StandardCharsets.UTF_8)
+            ?.use { it.readText() }
+        if (json == null) {
+            TACZLegacy.logger.warn("[DroneItemRenderer] Failed to open bundled remote model: {}", REMOTE_MODEL_PATH)
+            return null
+        }
+        return runCatching {
+            val reader = JsonReader(StringReader(json))
+            reader.isLenient = true
+            val pojo = internalModelGson.fromJson<BedrockModelPOJO>(reader, BedrockModelPOJO::class.java)
+            val version = BedrockVersion.fromPojo(pojo)
+                ?: error("unknown bedrock format version ${pojo.formatVersion}")
+            BedrockModel(pojo, version)
+        }.onFailure { error ->
+            TACZLegacy.logger.warn("[DroneItemRenderer] Failed to parse bundled remote model: {}", error.message)
+        }.getOrNull().also { remoteModel = it }
     }
 }

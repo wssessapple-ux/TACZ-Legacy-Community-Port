@@ -59,9 +59,10 @@ public class LivingEntityShoot(
 
         // 网络时间戳校验
         if (LegacyConfigManager.server.serverShootNetworkCheck && shooter is EntityPlayerMP) {
-            // 容忍窗口：单机/局域网（IntegratedServer，含开服主机）放宽到至少 2000ms，
+            // 容忍窗口：单机/局域网主机（非专用服务器）放宽到至少 2000ms，
             // 避免重型整合包 TPS 低/卡顿/暂停时把正常玩家误判为时间戳异常（导致弹药"扣了又回"）。
-            val isLocalServer = shooter.server is net.minecraft.server.integrated.IntegratedServer
+            // 不能 instanceof IntegratedServer：该类在 dedicated 服务端 jar 被剥离，会抛 NoClassDefFoundError。
+            val isLocalServer = !shooter.server.isDedicatedServer()
             val timeout = if (isLocalServer) {
                 LegacyConfigManager.server.serverShootNetworkTimeout.coerceAtLeast(2000).toLong()
             } else {
@@ -216,6 +217,8 @@ public class LivingEntityShoot(
         // 生成子弹实体
         if (!shooter.world.isRemote) {
             val bulletData = gunData.bulletData
+            val fireMode = iGun.getFireMode(gunItem)
+            val fireModeAdjust = gunData.fireModeAdjusts[fireMode]
             val gunId = iGun.getGunId(gunItem)
             val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
             val attachmentModifiers = TACZGunPropertyResolver.collectAttachmentModifiers(gunItem, iGun)
@@ -240,15 +243,16 @@ public class LivingEntityShoot(
                 )
             }
 
-            // 配件 ammo_speed：用装配的弹速 modifier 覆盖基础弹速（含最小值下限）。
-            // 注：未含 fireModeAdjust 的发射模式微调（我方 GunCombatData 无 fireModeAdjusts 字段，独立治理项）。
+            // fire_mode_adjust.speed 先叠到基础弹速，配件 ammo_speed 再 eval 覆盖（含最小值下限）。
+            val processedSpeedBase = (bulletData.getProcessedSpeed() + (fireModeAdjust?.ammoSpeed ?: 0f))
+                .coerceAtLeast(0.1f)
             val processedSpeed = if (attachmentModifiers.ammoSpeed.isNotEmpty()) {
                 TACZAttachmentModifierRegistry.evalNumeric(
                     attachmentModifiers.ammoSpeed,
-                    bulletData.getProcessedSpeed().toDouble(),
+                    processedSpeedBase.toDouble(),
                 ).toFloat().coerceAtLeast(0.1f)
             } else {
-                bulletData.getProcessedSpeed()
+                processedSpeedBase
             }
             // 配件 ignite：用装配的点燃配件 modifier 覆盖枪械基础点燃属性
             val ignition = TACZAttachmentModifierRegistry.evalIgnite(
@@ -269,6 +273,11 @@ public class LivingEntityShoot(
                 )
                 bullet.applyShotgunDamageSpread(bulletAmount)
                 bullet.applyAttachmentIgnite(ignition)
+                // fire_mode_adjust：伤害/穿甲/爆头/击退加算，先于配件 modifier 叠加在基础值上
+                fireModeAdjust?.let {
+                    bullet.applyFireModeDamageAdjust(it.damage)
+                    bullet.applyFireModeExtraAdjust(it.armorIgnore, it.headShot, it.knockback)
+                }
                 // 配件子弹属性：armor_ignore/head_shot/pierce + damage + effective_range
                 bullet.applyAttachmentModifiers(attachmentModifiers)
                 bullet.applyAttachmentDamageModifier(attachmentModifiers.damage)
@@ -386,8 +395,8 @@ public class LivingEntityShoot(
         val shootInterval = if (fireMode == FireMode.BURST) {
             gunData.getBurstMinIntervalMs()
         } else {
-            // C1-3：接入配件 rpm modifier
-            gunData.getShootIntervalMs(TACZGunPropertyResolver.collectGunNumericModifiers(currentGunItem, iGun, "rpm"))
+            // C1-3：接入配件 rpm modifier；射速基准叠加 fire_mode_adjust.rpm
+            gunData.getShootIntervalMs(fireMode, TACZGunPropertyResolver.collectGunNumericModifiers(currentGunItem, iGun, "rpm"))
         }
 
         var coolDown = shootInterval - interval

@@ -30,6 +30,7 @@ internal object ModelRegisterer {
         LegacyItems.DRONE_CIVILIAN,
         LegacyItems.DRONE_MILITARY,
         LegacyItems.FPV_DRONE,
+        LegacyItems.GRENADE,
     )
 
     @SubscribeEvent

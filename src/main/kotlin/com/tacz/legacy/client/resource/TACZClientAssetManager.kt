@@ -14,7 +14,11 @@ import com.tacz.legacy.client.sound.GunPackAssetLocator
 import com.tacz.legacy.client.sound.GunPackSoundResourcePack
 import com.tacz.legacy.client.resource.index.ClientAttachmentIndex
 import com.tacz.legacy.client.resource.gltf.GltfAnimationData
+import com.tacz.legacy.client.renderer.gltf.GltfMeshRenderer
 import com.tacz.legacy.client.resource.gltf.GltfAnimationParser
+import com.tacz.legacy.client.resource.gltf.GltfMeshParser
+import com.tacz.legacy.client.resource.mesh.StaticMeshData
+import com.tacz.legacy.client.resource.obj.ObjMeshParser
 import com.tacz.legacy.client.resource.pojo.animation.bedrock.AnimationKeyframes
 import com.tacz.legacy.client.resource.pojo.animation.bedrock.BedrockAnimationFile
 import com.tacz.legacy.client.resource.pojo.animation.bedrock.SoundEffectKeyframes
@@ -115,6 +119,12 @@ internal object TACZClientAssetManager {
     /** Parsed glTF animation files keyed by animation ResourceLocation. */
     private val gltfAnimations = LinkedHashMap<ResourceLocation, GltfAnimationData>()
 
+    /** Parsed static meshes keyed by model ResourceLocation (glTF or OBJ); null means "tried and missing/invalid", so a bad model is not reparsed every frame. */
+    private val gltfMeshes = LinkedHashMap<ResourceLocation, StaticMeshData?>()
+
+    /** Parsed static OBJ meshes keyed by model ResourceLocation; null means missing/invalid. */
+    private val objMeshes = LinkedHashMap<ResourceLocation, StaticMeshData?>()
+
     /** Resolved gun pack sound resource ids referenced by displays / animation keyframes. */
     private val soundResources = LinkedHashSet<ResourceLocation>()
 
@@ -151,6 +161,32 @@ internal object TACZClientAssetManager {
     fun getGuiSlotTextureLocation(id: ResourceLocation): ResourceLocation? = guiSlotTextures[id]
     fun getAnimationFile(id: ResourceLocation): BedrockAnimationFile? = animations[id]
     fun getGltfAnimation(id: ResourceLocation): GltfAnimationData? = gltfAnimations[id]
+
+    /**
+     * Lazily resolve and cache a static glTF mesh. Falls back to classpath, then
+     * to opened gun packs (directory / zip). Returns null when no `.gltf` exists
+     * or the mesh parses empty.
+     */
+    fun getGltfMesh(id: ResourceLocation): StaticMeshData? {
+        gltfMeshes[id]?.let { return it }
+        if (gltfMeshes.containsKey(id)) return null
+        val mesh = obtainGltfMesh(id)
+        gltfMeshes[id] = mesh?.takeUnless { it.isEmpty() }
+        return mesh
+    }
+
+    /**
+     * Lazily resolve and cache a static OBJ mesh. Falls back to classpath, then
+     * to opened gun packs (directory / zip). Returns null when no `.obj` exists
+     * or the mesh parses empty.
+     */
+    fun getObjMesh(id: ResourceLocation): StaticMeshData? {
+        objMeshes[id]?.let { return it }
+        if (objMeshes.containsKey(id)) return null
+        val mesh = obtainObjMesh(id)
+        objMeshes[id] = mesh?.takeUnless { it.isEmpty() }
+        return mesh
+    }
     fun getScript(id: ResourceLocation): LuaTable? = scripts[id]
     fun getGunDisplayInstance(displayId: ResourceLocation): GunDisplayInstance? = gunDisplayInstances[displayId]
     fun getAttachmentIndex(attachmentId: ResourceLocation): ClientAttachmentIndex? = attachmentIndices[attachmentId]
@@ -345,6 +381,8 @@ internal object TACZClientAssetManager {
         guiSlotTextures.clear()
         animations.clear()
         gltfAnimations.clear()
+        gltfMeshes.clear()
+        objMeshes.clear()
         soundResources.clear()
         audioReferences.clear()
         packSources.clear()
@@ -355,6 +393,8 @@ internal object TACZClientAssetManager {
         ammoShellRenderAssets.clear()
         TACZAudioRuntime.clear()
         PlayerAnimatorCompat.clear()
+        // Drop GPU-side mesh caches (VBO/IBO) together with the parsed snapshot.
+        GltfMeshRenderer.releaseAll()
     }
 
     private fun buildAmmoShellRenderAsset(ammoId: ResourceLocation): ShellRenderAsset? {
@@ -854,6 +894,49 @@ internal object TACZClientAssetManager {
         val baseDir = id.path.substringBeforeLast('/', "")
         val resolved = if (baseDir.isEmpty()) normalized else "$baseDir/$normalized"
         return "assets/${id.namespace}/animations/$resolved"
+    }
+
+    private fun obtainGltfMesh(id: ResourceLocation): StaticMeshData? {
+        val meshPath = "geo_models/${id.path}.gltf"
+        val classpathStream = openClasspathResource("assets/${id.namespace}/$meshPath")
+            ?: openPackAsset(ResourceLocation(id.namespace, meshPath))
+        classpathStream ?: return null
+        return try {
+            val json = classpathStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+            GltfMeshParser.parse(json) { uri ->
+                val resolvedPath = resolveMeshBufferPath(id, uri)
+                openClasspathResource(resolvedPath)?.use { it.readBytes() }
+                    ?: openPackAsset(ResourceLocation(id.namespace, resolvedPath.removePrefix("assets/${id.namespace}/")))?.use { it.readBytes() }
+            }
+        } catch (e: Exception) {
+            TACZLegacy.logger.warn(MARKER, "Failed to parse glTF mesh {}: {}", id, e.message)
+            null
+        }
+    }
+
+    private fun resolveMeshBufferPath(id: ResourceLocation, uri: String): String {
+        val normalized = uri.replace('\\', '/').removePrefix("./")
+        if (normalized.contains(':')) {
+            val resource = ResourceLocation(normalized)
+            return "assets/${resource.namespace}/geo_models/${resource.path}"
+        }
+        val baseDir = id.path.substringBeforeLast('/', "")
+        val resolved = if (baseDir.isEmpty()) normalized else "$baseDir/$normalized"
+        return "assets/${id.namespace}/geo_models/$resolved"
+    }
+
+    private fun obtainObjMesh(id: ResourceLocation): StaticMeshData? {
+        val meshPath = "geo_models/${id.path}.obj"
+        val stream = openClasspathResource("assets/${id.namespace}/$meshPath")
+            ?: openPackAsset(ResourceLocation(id.namespace, meshPath))
+        stream ?: return null
+        return try {
+            val text = stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+            ObjMeshParser.parse(text)
+        } catch (e: Exception) {
+            TACZLegacy.logger.warn(MARKER, "Failed to parse OBJ mesh {}: {}", id, e.message)
+            null
+        }
     }
 
     // ------ Script loading ------

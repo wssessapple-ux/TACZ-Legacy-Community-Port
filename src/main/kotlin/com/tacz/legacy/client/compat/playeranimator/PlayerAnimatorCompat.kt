@@ -2,6 +2,7 @@ package com.tacz.legacy.client.compat.playeranimator
 
 import com.tacz.legacy.common.resource.TACZRuntimeSnapshot
 import com.tacz.legacy.api.event.GunShootEvent
+import net.minecraft.client.Minecraft
 import net.minecraft.client.entity.AbstractClientPlayer
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.player.EntityPlayer
@@ -112,6 +113,33 @@ internal object PlayerAnimatorCompat {
         if (!isAvailable()) return
         val player = entity as? AbstractClientPlayer ?: return
         bridge()?.stopAllAnimation(player)
+    }
+
+    /**
+     * FPV 进入：播内置遥控器循环姿势。
+     * 返回 false 表示 PA 缺席或 clip 没加载，调用方应保留原生静态抬臂兜底。
+     */
+    @JvmStatic
+    fun startFpvPose(): Boolean {
+        if (!isAvailable()) return false
+        val player = Minecraft.getMinecraft().player ?: return false
+        val bridge = bridge() ?: return false
+        return try {
+            bridge.startFpvPose(player)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** FPV 退出：淡出遥控器姿势。 */
+    @JvmStatic
+    fun stopFpvPose() {
+        if (!isAvailable()) return
+        val player = Minecraft.getMinecraft().player ?: return
+        try {
+            bridge()?.stopFpvPose(player)
+        } catch (_: Throwable) {
+        }
     }
 
     /** display 缺失：只关旋转修正，不动 clip 层。 */

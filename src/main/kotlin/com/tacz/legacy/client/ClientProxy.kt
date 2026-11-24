@@ -11,6 +11,7 @@ import com.tacz.legacy.client.event.LegacyClientOverlayEventHandler
 import com.tacz.legacy.client.event.TACZCameraRecoilHandler
 import com.tacz.legacy.client.foundation.FocusedSmokeClientHooks
 import com.tacz.legacy.client.fpv.FpvClientHandler
+import com.tacz.legacy.client.fpv.FpvSelfRenderHandler
 import com.tacz.legacy.client.gui.AmmoBoxScreen
 import com.tacz.legacy.client.gui.ChunkLoaderScreen
 import com.tacz.legacy.client.gui.GunSmithTableScreen
@@ -20,7 +21,9 @@ import com.tacz.legacy.client.renderer.block.GunSmithTableTileEntityRenderer
 import com.tacz.legacy.client.renderer.bloom.TACZBloomBridge
 import com.tacz.legacy.client.renderer.entity.RenderDrone
 import com.tacz.legacy.client.renderer.entity.RenderFpvDrone
+import com.tacz.legacy.client.renderer.entity.RenderGrenade
 import com.tacz.legacy.client.renderer.entity.RenderKineticBullet
+import com.tacz.legacy.client.renderer.item.GrenadeItemRenderer
 import com.tacz.legacy.client.renderer.item.TACZAmmoItemRenderer
 import com.tacz.legacy.client.renderer.item.TACZAttachmentItemRenderer
 import com.tacz.legacy.client.renderer.item.TACZBlockItemRenderer
@@ -38,6 +41,7 @@ import com.tacz.legacy.common.inventory.ChunkLoaderContainer
 import com.tacz.legacy.common.inventory.GunSmithTableContainer
 import com.tacz.legacy.common.entity.EntityDrone
 import com.tacz.legacy.common.entity.EntityFpvDrone
+import com.tacz.legacy.common.entity.EntityGrenade
 import com.tacz.legacy.common.entity.EntityKineticBullet
 import com.tacz.legacy.common.item.LegacyItems
 import com.tacz.legacy.client.particle.LegacyParticleFactoryRegistry
@@ -71,6 +75,7 @@ internal class ClientProxy : CommonProxy() {
         // 第三人称玩家动画驱动（PlayerAnimator 软依赖，没装库时整个钩子是空转）
         MinecraftForge.EVENT_BUS.register(PlayerAnimatorClientHooks::class.java)
         MinecraftForge.EVENT_BUS.register(FpvClientHandler)
+        MinecraftForge.EVENT_BUS.register(FpvSelfRenderHandler)
     }
 
     override fun preInit(): Unit {
@@ -86,6 +91,10 @@ internal class ClientProxy : CommonProxy() {
         RenderingRegistry.registerEntityRenderingHandler(
             EntityFpvDrone::class.java,
             IRenderFactory { manager -> RenderFpvDrone(manager) },
+        )
+        RenderingRegistry.registerEntityRenderingHandler(
+            EntityGrenade::class.java,
+            IRenderFactory { manager -> RenderGrenade(manager) },
         )
     }
 
@@ -110,6 +119,7 @@ internal class ClientProxy : CommonProxy() {
         LegacyItems.DRONE_CIVILIAN.setTileEntityItemStackRenderer(DroneItemRenderer)
         LegacyItems.DRONE_MILITARY.setTileEntityItemStackRenderer(DroneItemRenderer)
         LegacyItems.FPV_DRONE.setTileEntityItemStackRenderer(DroneItemRenderer)
+        LegacyItems.GRENADE.setTileEntityItemStackRenderer(GrenadeItemRenderer)
 
         // World-space TESR for gun smith table / workbench blocks
         ClientRegistry.bindTileEntitySpecialRenderer(GunSmithTableTileEntity::class.java, GunSmithTableTileEntityRenderer())

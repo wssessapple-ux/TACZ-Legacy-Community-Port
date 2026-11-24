@@ -4,10 +4,12 @@ import com.tacz.legacy.api.item.IGun
 import com.tacz.legacy.api.item.gun.FireMode
 import com.tacz.legacy.api.entity.IGunOperator
 import com.tacz.legacy.client.foundation.TACZAsciiFontHelper
+import com.tacz.legacy.client.fpv.FpvController
 import com.tacz.legacy.client.gameplay.LegacyClientGunAnimationDriver
 import com.tacz.legacy.client.input.LegacyInputExtraCheck
 import com.tacz.legacy.client.input.LegacyKeyBindings
 import com.tacz.legacy.client.gui.GunRefitScreen
+import com.tacz.legacy.client.model.mesh.MeshVboStats
 import com.tacz.legacy.client.renderer.crosshair.CrosshairType
 import com.tacz.legacy.client.resource.TACZClientAssetManager
 import com.tacz.legacy.client.resource.pojo.display.gun.AmmoCountStyle
@@ -89,8 +91,19 @@ internal object LegacyClientOverlayEventHandler {
         }
         renderGunHud(event)
         renderKillAmountOverlay(event)
+        renderKillFeed(event)
         renderInteractPrompt(event)
         renderDroneLockHud(event)
+        renderReturnHud(event)
+        renderFpvFrame(event)
+    }
+
+    @SubscribeEvent
+    fun onRenderDebugText(event: RenderGameOverlayEvent.Text) {
+        if (event.type != RenderGameOverlayEvent.ElementType.TEXT) {
+            return
+        }
+        MeshVboStats.debugLines().forEach { event.right.add(it) }
     }
 
     private fun renderHitMarker(mc: Minecraft) {
@@ -100,23 +113,54 @@ internal object LegacyClientOverlayEventHandler {
             startPosition = LegacyConfigManager.client.hitMarkerStartPosition.toFloat(),
         ) ?: return
 
-        val x = scaled.scaledWidth / 2f - 8f
-        val y = scaled.scaledHeight / 2f - 8f
-        val red = 1f
-        val green = if (snapshot.headShotTint) 0f else 1f
-        val blue = if (snapshot.headShotTint) 0f else 1f
+        val cx = scaled.scaledWidth / 2f
+        val cy = scaled.scaledHeight / 2f
+
+        val (red, green, blue) = when {
+            snapshot.isKill && snapshot.headShotTint -> Triple(1f, 0.10f, 0.10f)
+            snapshot.isKill -> Triple(1f, 0.45f, 0.20f)
+            snapshot.headShotTint -> Triple(1f, 0.15f, 0.15f)
+            else -> Triple(0.85f, 0.95f, 1f)
+        }
 
         GlStateManager.pushMatrix()
         GlStateManager.enableBlend()
         GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0)
+        GlStateManager.translate(cx, cy, 0f)
+        GlStateManager.scale(snapshot.scale, snapshot.scale, 1f)
         GlStateManager.color(red, green, blue, snapshot.alpha)
         mc.textureManager.bindTexture(HIT_ICON)
-        Gui.drawModalRectWithCustomSizedTexture((x - snapshot.offset).toInt(), (y - snapshot.offset).toInt(), 0f, 0f, 8, 8, 16f, 16f)
-        Gui.drawModalRectWithCustomSizedTexture((x + 8f + snapshot.offset).toInt(), (y - snapshot.offset).toInt(), 8f, 0f, 8, 8, 16f, 16f)
-        Gui.drawModalRectWithCustomSizedTexture((x - snapshot.offset).toInt(), (y + 8f + snapshot.offset).toInt(), 0f, 8f, 8, 8, 16f, 16f)
-        Gui.drawModalRectWithCustomSizedTexture((x + 8f + snapshot.offset).toInt(), (y + 8f + snapshot.offset).toInt(), 8f, 8f, 8, 8, 16f, 16f)
+        val o = snapshot.offset
+        Gui.drawModalRectWithCustomSizedTexture((-8f - o).toInt(), (-8f - o).toInt(), 0f, 0f, 8, 8, 16f, 16f)
+        Gui.drawModalRectWithCustomSizedTexture(o.toInt(), (-8f - o).toInt(), 8f, 0f, 8, 8, 16f, 16f)
+        Gui.drawModalRectWithCustomSizedTexture((-8f - o).toInt(), o.toInt(), 0f, 8f, 8, 8, 16f, 16f)
+        Gui.drawModalRectWithCustomSizedTexture(o.toInt(), o.toInt(), 8f, 8f, 8, 8, 16f, 16f)
         GlStateManager.color(1f, 1f, 1f, 1f)
         GlStateManager.disableBlend()
+        GlStateManager.popMatrix()
+
+        if (snapshot.headShotTint) {
+            drawHeadshotLabel(mc, cx, cy, snapshot.alpha)
+        }
+    }
+
+    private fun drawHeadshotLabel(mc: Minecraft, cx: Float, cy: Float, alpha: Float) {
+        val font = mc.fontRenderer
+        val text = I18n.translateToLocalFormatted("gui.tacz.gun_refit.property_diagrams.head_shot")
+        val width = TACZAsciiFontHelper.getStringWidth(font, text)
+        val a = (alpha * 0xFF).toInt().coerceIn(0, 0xFF)
+        val color = (a shl 24) or 0x00FFD54F
+        GlStateManager.pushMatrix()
+        GlStateManager.enableBlend()
+        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0)
+        GlStateManager.scale(0.5f, 0.5f, 1f)
+        TACZAsciiFontHelper.drawStringWithShadow(
+            font,
+            text,
+            (cx - width / 2f) * 2f,
+            (cy + 14f) * 2f,
+            color,
+        )
         GlStateManager.popMatrix()
     }
 
@@ -415,6 +459,67 @@ internal object LegacyClientOverlayEventHandler {
         GlStateManager.disableBlend()
     }
 
+    private fun renderKillFeed(event: RenderGameOverlayEvent.Post) {
+        if (!LegacyConfigManager.client.killFeedEnable) {
+            return
+        }
+        val mc = Minecraft.getMinecraft()
+        if (mc.gameSettings.hideGUI) {
+            return
+        }
+        val player = mc.player ?: return
+        if (player.isSpectator) {
+            return
+        }
+        val durationMs = (LegacyConfigManager.client.killFeedDurationSecond * 1000.0).toLong()
+        val entries = KillFeedState.snapshot(
+            System.currentTimeMillis(),
+            durationMs,
+            LegacyConfigManager.client.killFeedMaxEntries,
+        )
+        if (entries.isEmpty()) {
+            return
+        }
+        val font = mc.fontRenderer
+        var y = 4f
+        val lineHeight = 10f
+        for (entry in entries) {
+            val a = (entry.alpha * 0xFF).toInt().coerceIn(0, 0xFF)
+            val attackerColor = (a shl 24) or 0x00FFFFFF
+            val gunColor = (a shl 24) or 0x00AAAAAA
+            val arrowColor = (a shl 24) or 0x00AAAAAA
+            val killedColor = (a shl 24) or (if (entry.headShot) 0x00FFD54F else 0x00FFFFFF)
+            val distanceRgb = when {
+                entry.distance <= 10f -> 0x0055FF55
+                entry.distance <= 30f -> 0x00FFAA33
+                else -> 0x00FF5555
+            }
+            val distanceColor = (a shl 24) or distanceRgb
+            var cx = 4f
+
+            TACZAsciiFontHelper.drawStringWithShadow(font, entry.attacker, cx, y, attackerColor)
+            cx += TACZAsciiFontHelper.getStringWidth(font, entry.attacker)
+
+            if (entry.gunName.isNotBlank()) {
+                val gunText = " ${entry.gunName}"
+                TACZAsciiFontHelper.drawStringWithShadow(font, gunText, cx, y, gunColor)
+                cx += TACZAsciiFontHelper.getStringWidth(font, gunText)
+            }
+
+            if (entry.distance > 0f) {
+                val distText = " ${String.format(Locale.ROOT, "%.0fm", entry.distance)}"
+                TACZAsciiFontHelper.drawStringWithShadow(font, distText, cx, y, distanceColor)
+                cx += TACZAsciiFontHelper.getStringWidth(font, distText)
+            }
+
+            val arrow = " → "
+            TACZAsciiFontHelper.drawStringWithShadow(font, arrow, cx, y, arrowColor)
+            cx += TACZAsciiFontHelper.getStringWidth(font, arrow)
+            TACZAsciiFontHelper.drawStringWithShadow(font, entry.killed, cx, y, killedColor)
+            y += lineHeight
+        }
+    }
+
     private fun renderInteractPrompt(event: RenderGameOverlayEvent.Post): Unit {
         if (LegacyConfigManager.client.disableInteractHudText || !LegacyInputExtraCheck.isInGame()) {
             return
@@ -482,6 +587,42 @@ internal object LegacyClientOverlayEventHandler {
         val y = 8
 
         TACZAsciiFontHelper.drawStringWithShadow(font, text, x.toFloat(), y.toFloat(), 0xFFFF5555.toInt())
+    }
+
+    /** 自主返航常驻 HUD：屏幕中上部显示返航状态与到主人的距离。 */
+    private fun renderReturnHud(event: RenderGameOverlayEvent.Post) {
+        val mc = Minecraft.getMinecraft()
+        if (!FpvController.isActive || !FpvController.returning) return
+        if (mc.gameSettings.hideGUI) return
+        val player = mc.player ?: return
+        val drone = FpvController.getActiveDrone() ?: return
+        val dist = String.format(Locale.ROOT, "%.1f", drone.getDistance(player))
+        val text = I18n.translateToLocalFormatted("hud.tacz.fpv.returning", dist)
+        val font = mc.fontRenderer
+        val x = (event.resolution.scaledWidth - font.getStringWidth(text)) / 2f
+        TACZAsciiFontHelper.drawStringWithShadow(font, text, x, 24f, 0xFF55FF55.toInt())
+    }
+
+    /** FPV 视野边框：屏幕四周压一圈暗角、底部左右加深握柄色块，营造举着平板看画面的感觉。纯 2D 叠加。 */
+    private fun renderFpvFrame(event: RenderGameOverlayEvent.Post) {
+        if (!FpvController.isActive) return
+        val mc = Minecraft.getMinecraft()
+        if (mc.gameSettings.hideGUI) return
+
+        val w = event.resolution.scaledWidth
+        val h = event.resolution.scaledHeight
+        val edge = 10
+        val frameColor = 0x55000000.toInt()
+        Gui.drawRect(0, 0, w, edge, frameColor)
+        Gui.drawRect(0, h - edge, w, h, frameColor)
+        Gui.drawRect(0, 0, edge, h, frameColor)
+        Gui.drawRect(w - edge, 0, w, h, frameColor)
+
+        val gripW = w / 4
+        val gripH = 20
+        val gripColor = 0x99141414.toInt()
+        Gui.drawRect(0, h - gripH, gripW, h, gripColor)
+        Gui.drawRect(w - gripW, h - gripH, w, h, gripColor)
     }
 
     private fun prettyKeyName(keyName: String): String {

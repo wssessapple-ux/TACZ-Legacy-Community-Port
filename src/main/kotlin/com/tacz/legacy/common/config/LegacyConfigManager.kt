@@ -51,6 +51,9 @@ internal data class ClientConfigValues(
     var firstPersonBulletTracerEnable: Boolean = true,
     var disableInteractHudText: Boolean = false,
     var damageCounterResetTime: Int = 2000,
+    var killFeedEnable: Boolean = true,
+    var killFeedDurationSecond: Double = 5.0,
+    var killFeedMaxEntries: Int = 5,
     var disableMovementAttributeFov: Boolean = true,
     var enableTaczIdInTooltip: Boolean = true,
     var blockEntityTranslucent: Boolean = false,
@@ -74,6 +77,7 @@ internal data class ServerConfigValues(
     var headShotAabb: List<String> = emptyList(),
     var ammoBoxStackSize: Int = 3,
     var enableCrawl: Boolean = true,
+    var chunkLoaderLimitPerPlayer: Int = 3,
 )
 
 internal enum class ServerToggleKey(
@@ -300,6 +304,9 @@ internal object LegacyConfigManager {
             client.firstPersonBulletTracerEnable = cfg.getBoolean("FirstPersonBulletTracerEnable", "render", true, "Whether or not to render first person bullet trail.")
             client.disableInteractHudText = cfg.getBoolean("DisableInteractHudText", "render", false, "Disable the interact HUD text in the center of the screen.")
             client.damageCounterResetTime = cfg.getInt("DamageCounterResetTime", "render", 2000, 10, Int.MAX_VALUE, "Max time the damage counter will reset.")
+            client.killFeedEnable = cfg.getBoolean("KillFeedEnable", "render", true, "Whether or not to display the kill feed.")
+            client.killFeedDurationSecond = cfg.getFloat("KillFeedDurationSecond", "render", 5.0f, 0.0f, 600.0f, "The duration a kill feed entry stays on screen, in second.").toDouble()
+            client.killFeedMaxEntries = cfg.getInt("KillFeedMaxEntries", "render", 5, 1, 32, "The maximum number of kill feed entries shown at once.")
             client.disableMovementAttributeFov = cfg.getBoolean("DisableMovementAttributeFov", "render", true, "Disable the FOV effect from the movement speed attribute while holding a gun.")
             client.enableTaczIdInTooltip = cfg.getBoolean("EnableTaczIdInTooltip", "render", true, "Enable the display of the TACZ ID in the tooltip when advanced tooltip is enabled.")
             client.blockEntityTranslucent = cfg.getBoolean("EnableBlockEntityTranslucent", "render", false, "Enable translucent block-entity rendering.")
@@ -364,6 +371,10 @@ internal object LegacyConfigManager {
             server.enableCrawl = cfg.getBoolean(
                 "EnableCrawl", "misc", true,
                 "Whether or not players are allowed to use the crawl feature."
+            )
+            server.chunkLoaderLimitPerPlayer = cfg.getInt(
+                "ChunkLoaderLimitPerPlayer", "misc", 3, 0, Int.MAX_VALUE,
+                "Maximum chunk loaders each player can place. 0 means unlimited."
             )
             server.enableTableFilter = cfg.getBoolean(
                 "EnableDefaultGunSmithTableFilter", "misc", true,

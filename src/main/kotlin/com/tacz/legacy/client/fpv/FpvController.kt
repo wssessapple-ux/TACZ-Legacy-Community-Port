@@ -4,6 +4,9 @@ import com.tacz.legacy.common.entity.EntityFpvDrone
 import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.client.ClientMessageFpvControl
 import com.tacz.legacy.common.network.message.client.ClientMessageFpvExit
+import com.tacz.legacy.common.network.message.client.ClientMessageFpvReturn
+import com.tacz.legacy.client.compat.playeranimator.PlayerAnimatorCompat
+import com.tacz.legacy.client.input.LegacyKeyBindings
 import net.minecraft.client.Minecraft
 import net.minecraftforge.fml.relauncher.Side
 import net.minecraftforge.fml.relauncher.SideOnly
@@ -35,6 +38,9 @@ public object FpvController {
     private var exitRequested: Boolean = false
     /** 退出请求已等待的 tick 数；回包丢失超时后允许重发。 */
     private var exitWaitTicks: Int = 0
+    /** 本机是否处于自主返航中（以服务端 S2C 回包为准），供返航键 toggle 方向。 */
+    internal var returning: Boolean = false
+        private set
     /** 上一帧右键物理按住态，用于自算下降沿兜底（绕开 KeyBinding 沿被同绑键抢占）。 */
     private var wasRightDown: Boolean = false
 
@@ -44,6 +50,10 @@ public object FpvController {
 
     /** 当前是否正处于 FPV 遥控视角。 */
     internal val isActive: Boolean get() = droneId >= 0
+
+    /** 当前挂控的无人机实体（可能暂未同步到客户端而为 null），供 HUD/渲染读取位置。 */
+    @JvmStatic
+    public fun getActiveDrone(): net.minecraft.entity.Entity? = drone
 
     /** Java/Mixin 友好的静态判断入口。 */
     @JvmStatic
@@ -56,15 +66,20 @@ public object FpvController {
         enterCooldown = ENTER_COOLDOWN_TICKS
         missingTicks = 0
         wasRightDown = false
+        returning = false
         val entity = mc.world?.getEntityByID(id) as? EntityFpvDrone
         drone = entity
         if (entity != null) {
             mc.setRenderViewEntity(entity)
         }
         // 实体暂未同步到客户端时不立刻 detach，交由 onClientTick 宽限补挂视角。
+        // 挂上 PA 遥控器姿势；PA 缺席或 clip 缺失时返回 false，原生静态抬臂兜底。
+        PlayerAnimatorCompat.startFpvPose()
     }
 
     internal fun detach() {
+        // 先淡出 PA 遥控器姿势，再切回本体视角。
+        PlayerAnimatorCompat.stopFpvPose()
         droneId = -1
         drone = null
         exitRequested = false
@@ -72,6 +87,7 @@ public object FpvController {
         enterCooldown = 0
         missingTicks = 0
         wasRightDown = false
+        returning = false
         if (mc.world != null) {
             mc.setRenderViewEntity(mc.player)
         }
@@ -85,6 +101,11 @@ public object FpvController {
     public fun requestExit(recall: Boolean) {
         if (droneId < 0) return
         TACZNetworkHandler.sendToServer(ClientMessageFpvExit(droneId, recall))
+    }
+
+    /** 服务端回包同步返航状态。 */
+    internal fun setReturning(value: Boolean) {
+        returning = value
     }
 
     internal fun onClientTick() {
@@ -133,6 +154,11 @@ public object FpvController {
                 exitWaitTicks = 0
                 requestExit(gameSettings.keyBindSneak.isKeyDown())
             }
+        }
+
+        // 返航键：非返航 → 请求自主返航；返航中 → 请求取消切回手动。方向以服务端回包为准。
+        while (LegacyKeyBindings.FPV_RETURN.isPressed()) {
+            TACZNetworkHandler.sendToServer(ClientMessageFpvReturn(droneId, returning))
         }
 
         val input = player.movementInput

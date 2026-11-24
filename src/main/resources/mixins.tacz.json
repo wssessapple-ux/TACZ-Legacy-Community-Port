@@ -15,7 +15,8 @@
     "client.MinecraftInvoker",
     "client.MinecraftMixin",
     "client.ItemRendererMixin",
-    "client.ModelBipedGunPoseMixin"
+    "client.ModelBipedGunPoseMixin",
+    "client.RenderPlayerMixin"
   ],
   "server": []
 }

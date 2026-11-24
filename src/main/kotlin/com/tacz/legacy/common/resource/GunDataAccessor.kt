@@ -3,6 +3,7 @@
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.tacz.legacy.api.DefaultAssets
+import com.tacz.legacy.api.item.gun.FireMode
 import com.tacz.legacy.api.modifier.Modifier
 import net.minecraft.util.ResourceLocation
 import net.minecraft.util.math.MathHelper
@@ -57,6 +58,7 @@ public class GunCombatData private constructor(
     public val fireSoundMultiplier: Float,
     public val silenceSoundMultiplier: Float,
     public val canSlide: Boolean,
+    public val canCrawl: Boolean,
     public val boltType: BoltType,
     public val drawTimeS: Float,
     public val putAwayTimeS: Float,
@@ -69,6 +71,7 @@ public class GunCombatData private constructor(
     public val boltTimeS: Float,
     public val boltFeedTimeS: Float,
     public val fireModesSet: List<String>,
+    internal val fireModeAdjusts: Map<FireMode, TACZGunPropertyResolver.FireModeAdjust>,
     public val burstMinInterval: Float,
     public val burstCount: Int,
     public val burstShootIntervalMillis: Long,
@@ -89,26 +92,44 @@ public class GunCombatData private constructor(
     public val scriptId: ResourceLocation?,
     public val scriptParams: Map<String, Any>?,
     public val meleeData: GunMeleeCombatData?,
+    public val moveSpeedBase: Float,
+    public val moveSpeedAim: Float,
+    public val moveSpeedReload: Float,
+    public val hurtBobTweakMultiplier: Float,
     public val bulletData: BulletCombatData,
 ) {
     /**
      * 获取基于 RPM 的射击间隔（毫秒）。
      */
     /** 无参版本保留（Java 动画状态机等不接 rpm modifier 的路径仍可用）。 */
-    public fun getShootIntervalMs(): Long = getShootIntervalMs(emptyList())
+    public fun getShootIntervalMs(): Long = getShootIntervalMs(FireMode.UNKNOWN)
 
-    public fun getShootIntervalMs(rpmModifiers: List<Modifier>): Long {
+    /** 仅配件 rpm modifier 的重载（不区分开火模式、不乘 heat 倍率）。 */
+    public fun getShootIntervalMs(rpmModifiers: List<Modifier>): Long =
+        getShootIntervalMs(FireMode.UNKNOWN, rpmModifiers)
+
+    /**
+     * 对齐上游 getRoundsPerMinute(fireMode)：先按 (base rpm + fire_mode_adjust.rpm) 取基准值，
+     * eval 配件 modifier，Math.round + clamp(1, 1200)，再乘 heat 倍率且不再 clamp 上限。
+     * heat 倍率在我方由 resolver 单独计算，缺省 1.0 不改变现网 heat 语义。
+     */
+    public fun getShootIntervalMs(
+        fireMode: FireMode,
+        rpmModifiers: List<Modifier> = emptyList(),
+        heatRpmMultiplier: Float = 1.0f,
+    ): Long {
         if (roundsPerMinute <= 0) return 0L
-        // 兼容层 ③ C1-3：接入配件 rpm modifier。对齐上游 getRoundsPerMinute ——
-        // 先取基础 rpm，eval 配件 modifier，clamp(1,1200)，再转射速间隔。
-        // heat 倍率在我方是分离的（resolver 计算），不在这里乘，避免改变现网 heat 语义。
+        var rpm = roundsPerMinute
+        fireModeAdjusts[fireMode]?.let { rpm += it.rpm }
+        if (rpm <= 0) rpm = 300
         val evaluated = if (rpmModifiers.isEmpty()) {
-            roundsPerMinute.toDouble()
+            rpm.toDouble()
         } else {
-            TACZAttachmentModifierRegistry.evalNumeric(rpmModifiers, roundsPerMinute.toDouble())
+            TACZAttachmentModifierRegistry.evalNumeric(rpmModifiers, rpm.toDouble())
         }
         val clamped = MathHelper.clamp(Math.round(evaluated).toInt(), 1, 1200)
-        return 60_000L / clamped
+        val withHeat = (clamped * heatRpmMultiplier).toInt().coerceAtLeast(1)
+        return 60_000L / withHeat
     }
 
     public fun getBurstMinIntervalMs(): Long {
@@ -129,6 +150,9 @@ public class GunCombatData private constructor(
             } ?: BoltType.OPEN_BOLT
             val canSlide = raw.getAsJsonPrimitive("can_slide")?.asBoolean
                 ?: raw.getAsJsonPrimitive("canSlide")?.asBoolean
+                ?: true
+            val canCrawl = raw.getAsJsonPrimitive("can_crawl")?.asBoolean
+                ?: raw.getAsJsonPrimitive("canCrawl")?.asBoolean
                 ?: true
             val fireSound = raw.safeGetObject("fire_sound")
             val fireSoundMultiplier = fireSound?.getAsJsonPrimitive("fire_multiplier")?.asFloat ?: 1.0f
@@ -157,7 +181,8 @@ public class GunCombatData private constructor(
             val isInfinite = reloadObj?.getAsJsonPrimitive("infinite")?.asBoolean ?: false
             val reloadType = reloadObj?.getAsJsonPrimitive("type")?.asString ?: "magazine"
 
-            val boltTime = raw.getAsJsonPrimitive("bolt_time")?.asFloat ?: 0.5f
+            val boltTime = raw.getAsJsonPrimitive("bolt_action_time")?.asFloat
+                ?: raw.getAsJsonPrimitive("bolt_time")?.asFloat ?: 0.5f
             val boltFeedTime = raw.getAsJsonPrimitive("bolt_feed_time")?.asFloat ?: -1f
 
             val burstObj = raw.safeGetObject("burst_data") ?: raw.safeGetObject("burst")
@@ -168,6 +193,26 @@ public class GunCombatData private constructor(
             val burstContinuousShoot = burstObj?.getAsJsonPrimitive("continuous_shoot")?.asBoolean ?: false
 
             val fireModes = raw.getAsJsonArray("fire_mode")?.map { it.asString } ?: listOf("semi")
+            // fire_mode_adjust：解析 auto/semi/burst 三模式的战斗微调（对齐上游 GunData.fireModeAdjust）
+            val fireModeAdjusts: Map<FireMode, TACZGunPropertyResolver.FireModeAdjust> =
+                listOf(FireMode.AUTO, FireMode.SEMI, FireMode.BURST).associateWith { fm ->
+                    val modeKey = when (fm) {
+                        FireMode.AUTO -> "auto"; FireMode.SEMI -> "semi"; FireMode.BURST -> "burst"
+                        else -> null
+                    }
+                    val adjObj = modeKey?.let { raw.safeGetObject("fire_mode_adjust")?.safeGetObject(it) }
+                    if (adjObj == null) TACZGunPropertyResolver.FireModeAdjust()
+                    else TACZGunPropertyResolver.FireModeAdjust(
+                        damage = adjObj.getAsJsonPrimitive("damage")?.asFloat ?: 0f,
+                        rpm = adjObj.getAsJsonPrimitive("rpm")?.asInt ?: 0,
+                        ammoSpeed = adjObj.getAsJsonPrimitive("speed")?.asFloat ?: 0f,
+                        armorIgnore = adjObj.getAsJsonPrimitive("armor_ignore")?.asFloat ?: 0f,
+                        headShot = adjObj.getAsJsonPrimitive("head_shot_multiplier")?.asFloat ?: 0f,
+                        knockback = adjObj.getAsJsonPrimitive("knockback")?.asFloat ?: 0f,
+                        aimInaccuracy = adjObj.getAsJsonPrimitive("aim_inaccuracy")?.asFloat ?: 0f,
+                        otherInaccuracy = adjObj.getAsJsonPrimitive("other_inaccuracy")?.asFloat ?: 0f,
+                    )
+                }
             val crawlRecoilMultiplier = raw.getAsJsonPrimitive("crawl_recoil_multiplier")?.asFloat ?: 0.5f
 
             val heatObj = raw.safeGetObject("heat")
@@ -213,6 +258,14 @@ public class GunCombatData private constructor(
                 } else null
                 GunMeleeCombatData(cooldown = cooldown, distance = meleeDistance, defaultMeleeData = defaultData)
             } else null
+
+            // movement_speed：枪自身 base/aim/reload 三档移速修正（对齐上游 MoveSpeed，默认 0=无修正）
+            val moveSpeedObj = raw.safeGetObject("movement_speed")
+            val moveSpeedBase = moveSpeedObj?.getAsJsonPrimitive("base")?.asFloat ?: 0f
+            val moveSpeedAim = moveSpeedObj?.getAsJsonPrimitive("aim")?.asFloat ?: 0f
+            val moveSpeedReload = moveSpeedObj?.getAsJsonPrimitive("reload")?.asFloat ?: 0f
+            // hurt_bob_tweak_multiplier：被子弹击中时的视角晃动倍率（默认 0.05）；本轮仅解析留存，渲染链路后补
+            val hurtBobTweakMultiplier = raw.getAsJsonPrimitive("hurt_bob_tweak_multiplier")?.asFloat ?: 0.05f
 
             val bulletObj = raw.safeGetObject("bullet")
             val extraDamageObj = bulletObj?.safeGetObject("extra_damage")
@@ -277,6 +330,7 @@ public class GunCombatData private constructor(
                 fireSoundMultiplier = fireSoundMultiplier,
                 silenceSoundMultiplier = silenceSoundMultiplier,
                 canSlide = canSlide,
+                canCrawl = canCrawl,
                 boltType = bolt,
                 drawTimeS = drawTime,
                 putAwayTimeS = putAwayTime,
@@ -289,6 +343,7 @@ public class GunCombatData private constructor(
                 boltTimeS = boltTime,
                 boltFeedTimeS = boltFeedTime,
                 fireModesSet = fireModes,
+                fireModeAdjusts = fireModeAdjusts,
                 burstMinInterval = burstInterval,
                 burstCount = burstCount,
                 burstShootIntervalMillis = burstShootIntervalMs,
@@ -309,6 +364,10 @@ public class GunCombatData private constructor(
                 scriptId = scriptId,
                 scriptParams = scriptParams,
                 meleeData = meleeData,
+                moveSpeedBase = moveSpeedBase,
+                moveSpeedAim = moveSpeedAim,
+                moveSpeedReload = moveSpeedReload,
+                hurtBobTweakMultiplier = hurtBobTweakMultiplier,
                 bulletData = bulletCombatData,
             )
         }

@@ -114,6 +114,8 @@ public class BedrockGunModel extends BedrockAnimatedModel {
     private ItemStack currentGunItem = ItemStack.EMPTY;
     private int currentExtendMagLevel = 0;
     @Nullable
+    private ItemStack resolvedGunItem;
+    @Nullable
     private String lastFocusedSmokeMagStateKey;
 
     public BedrockGunModel(BedrockModelPOJO pojo, BedrockVersion version) {
@@ -313,6 +315,12 @@ public class BedrockGunModel extends BedrockAnimatedModel {
     }
 
     private void updateAttachmentRuntime(ItemStack gunItem) {
+        // 同一帧内 render 与 renderBloom 会各调一次；枪 stack 内容未变就复用上一次解析结果，
+        // 避免重复遍历 AttachmentType、读 NBT、查附件索引。
+        if (resolvedGunItem != null && ItemStack.areItemStacksEqual(resolvedGunItem, gunItem)) {
+            return;
+        }
+        resolvedGunItem = gunItem;
         currentGunItem = gunItem;
         adapterToRender.clear();
         currentExtendMagLevel = 0;

@@ -73,6 +73,18 @@ internal class ChunkLoaderTileEntityRenderer : TileEntitySpecialRenderer<ChunkLo
 
         tessellator.draw()
 
+        // 激活时在地面画出覆盖区块的范围线框（地面矩形 + 四条短竖边）。
+        // 关闭深度测试做穿透显示，避免贴地线框被地面/方块深度遮挡而随视角时隐时现。
+        if (active) {
+            GlStateManager.disableDepth()
+            val side = te.renderSide()
+            val hw = side * 8.0 - 0.5
+            buffer.begin(GL11.GL_LINES, DefaultVertexFormats.POSITION_COLOR)
+            outline(buffer, hw, red, green, blue, 0.35f)
+            tessellator.draw()
+            GlStateManager.enableDepth()
+        }
+
         GlStateManager.depthMask(true)
         GlStateManager.enableCull()
         GlStateManager.disableBlend()
@@ -94,5 +106,35 @@ internal class ChunkLoaderTileEntityRenderer : TileEntitySpecialRenderer<ChunkLo
         buffer.pos(x2.toDouble(), y2.toDouble(), z2.toDouble()).color(r, g, b, a).endVertex()
         buffer.pos(x3.toDouble(), y3.toDouble(), z3.toDouble()).color(r, g, b, a).endVertex()
         buffer.pos(x4.toDouble(), y4.toDouble(), z4.toDouble()).color(r, g, b, a).endVertex()
+    }
+
+    /** 范围线框：地面矩形四边 + 四角竖边。坐标相对方块中心。 */
+    private fun outline(
+        buffer: net.minecraft.client.renderer.BufferBuilder,
+        hw: Double,
+        r: Float, g: Float, b: Float, a: Float,
+    ) {
+        val y0 = -0.45
+        val y1 = 1.5
+        // 地面四边
+        line(buffer, -hw, y0, -hw, hw, y0, -hw, r, g, b, a)
+        line(buffer, hw, y0, -hw, hw, y0, hw, r, g, b, a)
+        line(buffer, hw, y0, hw, -hw, y0, hw, r, g, b, a)
+        line(buffer, -hw, y0, hw, -hw, y0, -hw, r, g, b, a)
+        // 四角竖边
+        line(buffer, -hw, y0, -hw, -hw, y1, -hw, r, g, b, a)
+        line(buffer, hw, y0, -hw, hw, y1, -hw, r, g, b, a)
+        line(buffer, hw, y0, hw, hw, y1, hw, r, g, b, a)
+        line(buffer, -hw, y0, hw, -hw, y1, hw, r, g, b, a)
+    }
+
+    private fun line(
+        buffer: net.minecraft.client.renderer.BufferBuilder,
+        x1: Double, y1: Double, z1: Double,
+        x2: Double, y2: Double, z2: Double,
+        r: Float, g: Float, b: Float, a: Float,
+    ) {
+        buffer.pos(x1, y1, z1).color(r, g, b, a).endVertex()
+        buffer.pos(x2, y2, z2).color(r, g, b, a).endVertex()
     }
 }

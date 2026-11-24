@@ -108,40 +108,20 @@ public class BedrockModel {
             }
 
             for (CubesItem cube : bones.getCubes()) {
-                List<Float> uv = cube.getUv();
                 @Nullable FaceUVsItem faceUv = cube.getFaceUv();
-                List<Float> cubeSize = cube.getSize();
                 @Nullable List<Float> cubeRotation = cube.getRotation();
-                boolean mirror = cube.isMirror();
-                float inflate = cube.getInflate();
 
                 if (cubeRotation == null) {
-                    if (faceUv == null) {
-                        model.cubes.add(new BedrockCubeBox(uv.get(0), uv.get(1),
-                                convertOrigin(bones, cube, 0), convertOrigin(bones, cube, 1), convertOrigin(bones, cube, 2),
-                                cubeSize.get(0), cubeSize.get(1), cubeSize.get(2), inflate, mirror,
-                                texWidth, texHeight));
-                    } else {
-                        model.cubes.add(new BedrockCubePerFace(
-                                convertOrigin(bones, cube, 0), convertOrigin(bones, cube, 1), convertOrigin(bones, cube, 2),
-                                cubeSize.get(0), cubeSize.get(1), cubeSize.get(2), inflate,
-                                texWidth, texHeight, faceUv));
-                    }
+                    model.cubes.add(createCube(cube,
+                            convertOrigin(bones, cube, 0), convertOrigin(bones, cube, 1), convertOrigin(bones, cube, 2),
+                            texWidth, texHeight, faceUv));
                 } else {
                     BedrockPart cubeRenderer = new BedrockPart(null);
                     cubeRenderer.setPos(convertPivot(bones, cube, 0), convertPivot(bones, cube, 1), convertPivot(bones, cube, 2));
                     setRotationAngle(cubeRenderer, convertRotation(cubeRotation.get(0)), convertRotation(cubeRotation.get(1)), convertRotation(cubeRotation.get(2)));
-                    if (faceUv == null) {
-                        cubeRenderer.cubes.add(new BedrockCubeBox(uv.get(0), uv.get(1),
-                                convertOrigin(cube, 0), convertOrigin(cube, 1), convertOrigin(cube, 2),
-                                cubeSize.get(0), cubeSize.get(1), cubeSize.get(2), inflate, mirror,
-                                texWidth, texHeight));
-                    } else {
-                        cubeRenderer.cubes.add(new BedrockCubePerFace(
-                                convertOrigin(cube, 0), convertOrigin(cube, 1), convertOrigin(cube, 2),
-                                cubeSize.get(0), cubeSize.get(1), cubeSize.get(2), inflate,
-                                texWidth, texHeight, faceUv));
-                    }
+                    cubeRenderer.cubes.add(createCube(cube,
+                            convertOrigin(cube, 0), convertOrigin(cube, 1), convertOrigin(cube, 2),
+                            texWidth, texHeight, faceUv));
                     model.addChild(cubeRenderer);
                 }
             }
@@ -253,6 +233,44 @@ public class BedrockModel {
 
     protected float convertRotation(float degree) {
         return (float) (degree * Math.PI / 180);
+    }
+
+    /**
+     * 按 cube 的 {@code shape} 构造几何图元：默认 box（box/per-face UV），
+     * {@code cylinder} 平滑圆柱、{@code sphere} 球、{@code prism} 硬边多边形棱柱。
+     */
+    protected BedrockCube createCube(CubesItem cube, float ox, float oy, float oz,
+                                     int texWidth, int texHeight, @Nullable FaceUVsItem faceUv) {
+        List<Float> uv = cube.getUv();
+        List<Float> size = cube.getSize();
+        boolean mirror = cube.isMirror();
+        float inflate = cube.getInflate();
+        String shape = cube.getShape();
+
+        if ("cylinder".equals(shape)) {
+            float u = uv != null ? uv.get(0) : 0.0F;
+            float v = uv != null ? uv.get(1) : 0.0F;
+            return new CylinderCube(ox, oy, oz, size.get(0), size.get(1), size.get(2),
+                cube.getSegments(), true, u, v, u + size.get(0), v + size.get(1), texWidth, texHeight);
+        }
+        if ("sphere".equals(shape)) {
+            float u = uv != null ? uv.get(0) : 0.0F;
+            float v = uv != null ? uv.get(1) : 0.0F;
+            return new SphereCube(ox, oy, oz, size.get(0), size.get(1), size.get(2),
+                cube.getSegments(), cube.getRings(), u, v, u + size.get(0), v + size.get(1), texWidth, texHeight);
+        }
+        if ("prism".equals(shape)) {
+            float u = uv != null ? uv.get(0) : 0.0F;
+            float v = uv != null ? uv.get(1) : 0.0F;
+            return new PolyhedronCube(ox, oy, oz, size.get(0), size.get(1), size.get(2),
+                cube.getSegments(), true, u, v, u + size.get(0), v + size.get(1), texWidth, texHeight);
+        }
+        if (faceUv == null) {
+            return new BedrockCubeBox(uv.get(0), uv.get(1), ox, oy, oz,
+                size.get(0), size.get(1), size.get(2), inflate, mirror, texWidth, texHeight);
+        }
+        return new BedrockCubePerFace(ox, oy, oz, size.get(0), size.get(1), size.get(2),
+            inflate, texWidth, texHeight, faceUv);
     }
 
     @Nullable

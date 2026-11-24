@@ -273,8 +273,9 @@ internal object LegacyClientShootCoordinator {
         val interval = if (fireMode == FireMode.BURST) {
             (gunData.burstMinInterval * 1000f).toLong()
         } else {
-            // C1-3：接入配件 rpm modifier
+            // C1-3：接入配件 rpm modifier；射速基准叠加 fire_mode_adjust.rpm
             gunData.getShootIntervalMs(
+                fireMode,
                 com.tacz.legacy.common.resource.TACZGunPropertyResolver.collectGunNumericModifiers(stack, iGun, "rpm"),
             )
         }

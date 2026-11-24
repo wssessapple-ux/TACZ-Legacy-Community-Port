@@ -12,8 +12,8 @@ class TACZPerspectiveAwareBakedModelTest {
     }
 
     @Test
-    fun `GROUND is item presentation context`() {
-        assertTrue(TACZPerspectiveAwareBakedModel.isItemPresentationContext(TransformType.GROUND))
+    fun `GROUND is NOT item presentation context`() {
+        assertFalse(TACZPerspectiveAwareBakedModel.isItemPresentationContext(TransformType.GROUND))
     }
 
     @Test

@@ -250,15 +250,18 @@ internal class RenderKineticBullet(renderManager: RenderManager) : Render<Entity
                 val offsetReducer = max(0.0, (50.0 - disToEye)) / 50.0
                 debugOffsetReducer = offsetReducer
                 debugFirstPersonOffset = Vector3f(firstPersonOffset)
-                GlStateManager.rotate(-(entity.firstPersonCameraYaw!! + 180.0f), 0.0f, 1.0f, 0.0f)
-                GlStateManager.rotate(-entity.firstPersonCameraPitch!!, 1.0f, 0.0f, 0.0f)
+                // 相机角可能在 player 为 null 的边界路径上未赋值；回退到实体自身朝向，避免可空字段空指针。
+                val camYaw = entity.firstPersonCameraYaw ?: entity.rotationYaw
+                val camPitch = entity.firstPersonCameraPitch ?: entity.rotationPitch
+                GlStateManager.rotate(-(camYaw + 180.0f), 0.0f, 1.0f, 0.0f)
+                GlStateManager.rotate(-camPitch, 1.0f, 0.0f, 0.0f)
                 GlStateManager.translate(
                     firstPersonOffset.x * offsetReducer.toFloat(),
                     firstPersonOffset.y * offsetReducer.toFloat(),
                     firstPersonOffset.z * offsetReducer.toFloat(),
                 )
-                GlStateManager.rotate(entity.firstPersonCameraPitch!!, 1.0f, 0.0f, 0.0f)
-                GlStateManager.rotate(entity.firstPersonCameraYaw!! + 180.0f, 0.0f, 1.0f, 0.0f)
+                GlStateManager.rotate(camPitch, 1.0f, 0.0f, 0.0f)
+                GlStateManager.rotate(camYaw + 180.0f, 0.0f, 1.0f, 0.0f)
                 debugOriginAfterOffset = projectCurrentPoint(0.0f, 0.0f, 0.0f)
             }
         }

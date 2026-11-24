@@ -1,0 +1,42 @@
+{
+  "materials": [
+    {
+      "item": {
+        "item": "minecraft:iron_ingot"
+      },
+      "count": 4
+    },
+    {
+      "item": {
+        "item": "minecraft:glass_pane"
+      },
+      "count": 1
+    },
+    {
+      "item": {
+        "item": "minecraft:redstone"
+      },
+      "count": 2
+    },
+    {
+      "item": {
+        "item": "minecraft:gunpowder"
+      },
+      "count": 1
+    },
+    {
+      "item": {
+        "item": "minecraft:quartz"
+      },
+      "count": 1
+    }
+  ],
+  "result": {
+    "type": "custom",
+    "group": "misc",
+    "item": {
+      "item": "tacz:fpv_drone"
+    }
+  },
+  "type": "tacz:gun_smith_table_crafting"
+}

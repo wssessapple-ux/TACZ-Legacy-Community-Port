@@ -299,8 +299,9 @@ internal class TACZGunScriptAPI {
         val coolDown = if (fireMode == FireMode.BURST) {
             (data.burstMinInterval * 1000f).toLong()
         } else {
-            // C1-3：接入配件 rpm modifier
+            // C1-3：接入配件 rpm modifier；射速基准叠加 fire_mode_adjust.rpm
             data.getShootIntervalMs(
+                fireMode,
                 com.tacz.legacy.common.resource.TACZGunPropertyResolver.collectGunNumericModifiers(itemStack, gun, "rpm"),
             )
         }

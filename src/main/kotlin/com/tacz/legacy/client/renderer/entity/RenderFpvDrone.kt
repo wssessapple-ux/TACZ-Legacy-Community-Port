@@ -4,6 +4,7 @@ import com.google.gson.GsonBuilder
 import com.google.gson.stream.JsonReader
 import com.tacz.legacy.TACZLegacy
 import com.tacz.legacy.client.model.bedrock.BedrockModel
+import com.tacz.legacy.client.renderer.gltf.GltfMeshRenderer
 import com.tacz.legacy.client.resource.pojo.model.BedrockModelPOJO
 import com.tacz.legacy.client.resource.pojo.model.BedrockVersion
 import com.tacz.legacy.client.resource.pojo.model.CubesItem
@@ -23,8 +24,9 @@ import java.io.StringReader
 import java.nio.charset.StandardCharsets
 
 /**
- * FPV 侦察无人机实体渲染器。复用自杀机同款 bedrock 模型与民用贴图，
- * 朝向跟随实体自身的 yaw/pitch（由操控视角驱动），旋翼持续旋转。
+ * FPV 侦察无人机实体渲染器。本体优先走自研 OBJ 静态网格（Mesh/VBO 管线），
+ * 解析/上传失败再回退 bedrock 模型；朝向跟随实体自身的 yaw/pitch。
+ * 静态网格不带骨骼节点，旋翼旋转动画只在 bedrock 兜底分支保留。
  *
  * 探照灯：机头朝前画一束半透明可见光锥（加法混合），第一/第三人称均可见；
  * 纯视觉光效，不参与世界光照、不改变方块亮度。
@@ -75,7 +77,6 @@ internal class RenderFpvDrone(renderManager: RenderManager) : Render<EntityFpvDr
         z: Double,
         partialTicks: Float,
     ) {
-        val droneModel = resolveModel() ?: return
         Minecraft.getMinecraft().textureManager.bindTexture(fpvTexture)
 
         GlStateManager.pushMatrix()
@@ -83,21 +84,38 @@ internal class RenderFpvDrone(renderManager: RenderManager) : Render<EntityFpvDr
         GlStateManager.rotate(-entity.rotationYaw, 0f, 1f, 0f)
         GlStateManager.rotate(entity.rotationPitch, 1f, 0f, 0f)
 
-        GlStateManager.translate(0.0f, 1.5f, 0.0f)
-        GlStateManager.scale(-1.0f, -1.0f, 1.0f)
         GlStateManager.enableLighting()
         GlStateManager.enableRescaleNormal()
         GlStateManager.enableBlend()
         GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0)
 
-        val tickTime = entity.ticksExisted + partialTicks
-        val angle = (tickTime * 0.6) % (2.0 * Math.PI)
-        droneModel.getNode("rotor_fl")?.let { it.yRot = angle.toFloat() }
-        droneModel.getNode("rotor_fr")?.let { it.yRot = -angle.toFloat() }
-        droneModel.getNode("rotor_bl")?.let { it.yRot = -angle.toFloat() }
-        droneModel.getNode("rotor_br")?.let { it.yRot = angle.toFloat() }
+        // OBJ 静态网格测试：关掉纹理采样，纯色受光显示，不绑贴图；失败再回退 bedrock（兜底需要贴图）。
+        GlStateManager.disableTexture2D()
+        GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
+        val objId = ResourceLocation(TACZLegacy.MOD_ID, "drone")
+        val objOk = GltfMeshRenderer.tryRenderManagedObj(objId, scale = 16.0F)
+        GlStateManager.enableTexture2D()
 
-        droneModel.render()
+        if (!objOk) {
+            val droneModel = resolveModel() ?: run {
+                GlStateManager.disableBlend()
+                GlStateManager.disableRescaleNormal()
+                GlStateManager.popMatrix()
+                return
+            }
+            // bedrock 模型专用变换三明治。
+            GlStateManager.translate(0.0f, 1.5f, 0.0f)
+            GlStateManager.scale(-1.0f, -1.0f, 1.0f)
+
+            val tickTime = entity.ticksExisted + partialTicks
+            val angle = (tickTime * 0.6) % (2.0 * Math.PI)
+            droneModel.getNode("rotor_fl")?.let { it.yRot = angle.toFloat() }
+            droneModel.getNode("rotor_fr")?.let { it.yRot = -angle.toFloat() }
+            droneModel.getNode("rotor_bl")?.let { it.yRot = -angle.toFloat() }
+            droneModel.getNode("rotor_br")?.let { it.yRot = angle.toFloat() }
+
+            droneModel.render()
+        }
 
         GlStateManager.disableBlend()
         GlStateManager.disableRescaleNormal()

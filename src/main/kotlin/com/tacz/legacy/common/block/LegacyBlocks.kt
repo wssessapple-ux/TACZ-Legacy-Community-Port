@@ -7,7 +7,9 @@ import com.tacz.legacy.common.block.entity.ChunkLoaderTileEntity
 import com.tacz.legacy.common.block.entity.GunSmithTableTileEntity
 import com.tacz.legacy.common.block.entity.StatueTileEntity
 import com.tacz.legacy.common.block.entity.TargetTileEntity
+import com.tacz.legacy.common.config.LegacyConfigManager
 import com.tacz.legacy.common.gui.LegacyGuiIds
+import com.tacz.legacy.common.item.LegacyBlockItem
 import com.tacz.legacy.common.registry.LegacyCreativeTabs
 import com.tacz.legacy.common.registry.LegacySoundEvents
 import net.minecraft.block.BlockContainer
@@ -16,16 +18,21 @@ import net.minecraft.block.material.Material
 import net.minecraft.block.state.IBlockState
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.player.EntityPlayer
+import net.minecraft.item.Item
 import net.minecraft.item.ItemStack
+import net.minecraft.init.Items
 import net.minecraft.init.SoundEvents
 import net.minecraft.inventory.InventoryHelper
 import net.minecraft.tileentity.TileEntity
 import net.minecraft.util.EnumBlockRenderType
 import net.minecraft.util.EnumFacing
 import net.minecraft.util.EnumHand
+import net.minecraft.util.NonNullList
 import net.minecraft.util.ResourceLocation
+import net.minecraft.util.math.RayTraceResult
 import net.minecraft.util.SoundCategory
 import net.minecraft.util.math.BlockPos
+import net.minecraft.util.text.TextComponentTranslation
 import net.minecraft.world.IBlockAccess
 import net.minecraft.world.World
 import net.minecraftforge.registries.IForgeRegistry
@@ -78,6 +85,43 @@ internal class LegacyGunSmithTableBlock(path: String) : LegacyBaseBlock(path, Ma
 
     override fun createNewTileEntity(worldIn: World, meta: Int): TileEntity = GunSmithTableTileEntity().apply {
         blockId = requireNotNull(this@LegacyGunSmithTableBlock.registryName)
+    }
+
+    /**
+     * 掉落物要带上 TileEntity 里的 BlockId，否则枪包工作台（配件台/弹药台等）被破坏后
+     * 会变回没有 BlockId 的默认枪匠台。
+     */
+    override fun getDrops(
+        drops: NonNullList<ItemStack>,
+        world: IBlockAccess,
+        pos: BlockPos,
+        state: IBlockState,
+        fortune: Int,
+    ) {
+        val item = Item.getItemFromBlock(this)
+        if (item == Items.AIR) return
+        val stack = ItemStack(item)
+        val tile = world.getTileEntity(pos) as? GunSmithTableTileEntity
+        if (item is LegacyBlockItem && tile != null) {
+            item.setBlockId(stack, tile.blockId)
+        }
+        drops += stack
+    }
+
+    override fun getPickBlock(
+        state: IBlockState,
+        target: RayTraceResult,
+        world: World,
+        pos: BlockPos,
+        player: EntityPlayer,
+    ): ItemStack {
+        val item = Item.getItemFromBlock(this)
+        val stack = ItemStack(item)
+        val tile = world.getTileEntity(pos) as? GunSmithTableTileEntity
+        if (item is LegacyBlockItem && tile != null) {
+            item.setBlockId(stack, tile.blockId)
+        }
+        return stack
     }
 
     override fun onBlockActivated(
@@ -222,10 +266,33 @@ internal class LegacyChunkLoaderBlock(path: String) : LegacyBaseBlock(path, Mate
         super.onBlockPlacedBy(worldIn, pos, state, placer, stack)
         if (!worldIn.isRemote && placer is EntityPlayer) {
             (worldIn.getTileEntity(pos) as? ChunkLoaderTileEntity)?.let {
-                it.owner = placer.name
+                it.ownerUuid = placer.uniqueID
+                it.ownerName = placer.name
                 it.markDirty()
             }
+            enforceChunkLoaderLimit(worldIn, pos, placer, stack)
         }
+    }
+
+    /** 超过每玩家放置上限时拆除刚放的加载器，返还物品并提示；创造与 0（不限）放行。 */
+    private fun enforceChunkLoaderLimit(
+        world: World,
+        pos: BlockPos,
+        player: EntityPlayer,
+        stack: ItemStack,
+    ) {
+        val limit = LegacyConfigManager.server.chunkLoaderLimitPerPlayer
+        if (limit <= 0 || player.capabilities.isCreativeMode) return
+        val uuid = player.uniqueID
+        val count = world.loadedTileEntityList.count {
+            it is ChunkLoaderTileEntity && it.ownerUuid == uuid
+        }
+        if (count <= limit) return
+        world.setBlockToAir(pos)
+        if (!player.inventory.addItemStackToInventory(stack)) {
+            InventoryHelper.spawnItemStack(world, pos.x.toDouble(), pos.y.toDouble(), pos.z.toDouble(), stack)
+        }
+        player.sendMessage(TextComponentTranslation("message.tacz.chunk_loader.limit_reached", limit))
     }
 
     override fun onBlockActivated(

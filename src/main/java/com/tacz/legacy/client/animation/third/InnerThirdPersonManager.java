@@ -5,6 +5,7 @@ import com.tacz.legacy.api.client.other.ThirdPersonManager;
 import com.tacz.legacy.api.entity.IGunOperator;
 import com.tacz.legacy.api.item.IGun;
 import com.tacz.legacy.client.compat.playeranimator.PlayerAnimatorCompat;
+import com.tacz.legacy.client.fpv.FpvController;
 import com.tacz.legacy.client.resource.TACZClientAssetManager;
 import com.tacz.legacy.client.resource.pojo.display.gun.GunDisplay;
 import com.tacz.legacy.common.resource.TACZGunPackPresentation;
@@ -49,6 +50,12 @@ public final class InnerThirdPersonManager {
         // 暂停时不算，否则标题界面的预览实体会一直重算（上游同款保护）
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft == null || minecraft.isGamePaused()) {
+            return;
+        }
+
+        // FPV 遥控期间主手是无人机而非枪械：这里不能按“切空”走 stopAllAnimation，
+        // 否则每帧都会把 PA 的遥控器循环姿势层淡出清掉。FPV 姿势交给模型 mixin 的 FPV 分支。
+        if (FpvController.isFpvActive()) {
             return;
         }
 

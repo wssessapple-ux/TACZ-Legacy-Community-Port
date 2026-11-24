@@ -15,6 +15,10 @@ internal object LegacyCreativeTabs {
         override fun createIcon(): ItemStack = ItemStack(LegacyItems.GUN_SMITH_TABLE)
     }
 
+    internal val TACTICAL: CreativeTabs = object : DynamicIconTab("tacz.tactical") {
+        override fun createIcon(): ItemStack = ItemStack(LegacyItems.TAB_ICON)
+    }
+
     internal val AMMO: CreativeTabs = object : DynamicIconTab("tacz.ammo") {
         override fun createIcon(): ItemStack {
             val ammo = TACZGunPackPresentation.sortedAmmos(TACZGunPackRuntimeRegistry.getSnapshot()).firstOrNull()

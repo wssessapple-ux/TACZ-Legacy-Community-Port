@@ -2,6 +2,9 @@ package com.tacz.legacy.mixin.minecraft.client;
 
 import com.tacz.legacy.api.item.IGun;
 import com.tacz.legacy.client.animation.third.InnerThirdPersonManager;
+import com.tacz.legacy.client.compat.playeranimator.PlayerAnimatorCompat;
+import com.tacz.legacy.client.fpv.FpvController;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.ModelBiped;
 import net.minecraft.client.model.ModelRenderer;
 import net.minecraft.entity.Entity;
@@ -80,5 +83,31 @@ public abstract class ModelBipedGunPoseMixin {
         InnerThirdPersonManager.setRotationAnglesHead(
                 (EntityLivingBase) entityIn, this.bipedRightArm, this.bipedLeftArm, this.bipedBody, this.bipedHead,
                 this.bipedHeadwear, limbSwingAmount);
+    }
+
+    /**
+     * FPV 遥控期间把本机玩家双臂静态抬到胸前握遥控器。纯静态摆角，无动作过渡；
+     * PlayerAnimator 在场且遥控器循环 clip 在播时由兼容层驱动骨骼，这里让路不覆盖；
+     * PA 缺席才退回写死角度兜底。每帧 setRotationAngles 重算后由这里覆盖，退出 FPV 自然恢复。
+     */
+    @Inject(method = "setRotationAngles", at = @At("TAIL"))
+    private void tacz$applyFpvRemoteArmPose(
+            float limbSwing, float limbSwingAmount, float ageInTicks,
+            float netHeadYaw, float headPitch, float scaleFactor,
+            Entity entityIn, CallbackInfo ci
+    ) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (entityIn != mc.player || !FpvController.isFpvActive()) {
+            return;
+        }
+        // PA 正在播遥控器姿势，骨骼已由动画层驱动，静态摆角让路。
+        if (PlayerAnimatorCompat.shouldSkipVanillaArmPose((EntityLivingBase) entityIn)) {
+            return;
+        }
+        // 双臂前抬到胸前，略向内收，双手在中线靠拢握遥控器。
+        this.bipedRightArm.rotateAngleX = -1.25F;
+        this.bipedLeftArm.rotateAngleX = -1.25F;
+        this.bipedRightArm.rotateAngleZ = -0.18F;
+        this.bipedLeftArm.rotateAngleZ = 0.18F;
     }
 }

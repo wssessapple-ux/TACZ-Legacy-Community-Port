@@ -35,6 +35,21 @@ public class CubesItem {
     @SerializedName("pivot")
     private List<Float> pivot;
 
+    /** 几何类型：box（默认）/ cylinder（平滑圆柱）/ sphere（球）/ prism（硬边多边形棱柱）。参数化曲面图元用。 */
+    @Expose
+    @SerializedName("shape")
+    private String shape = "box";
+
+    /** 圆柱/球/棱柱水平分段数（棱柱即边数）。 */
+    @Expose
+    @SerializedName("segments")
+    private int segments = 8;
+
+    /** 球垂直纬线圈数。 */
+    @Expose
+    @SerializedName("rings")
+    private int rings = 6;
+
     public List<Float> getUv() {
         return uv;
     }
@@ -76,6 +91,18 @@ public class CubesItem {
     @Nullable
     public List<Float> getPivot() {
         return pivot;
+    }
+
+    public String getShape() {
+        return shape == null ? "box" : shape;
+    }
+
+    public int getSegments() {
+        return segments;
+    }
+
+    public int getRings() {
+        return rings;
     }
 
     public static class Deserializer implements JsonDeserializer<CubesItem> {

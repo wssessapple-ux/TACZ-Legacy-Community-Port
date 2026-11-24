@@ -2,6 +2,8 @@ package com.tacz.legacy.common.network.message.event
 
 import com.tacz.legacy.api.DefaultAssets
 import com.tacz.legacy.api.event.EntityKillByGunEvent
+import com.tacz.legacy.common.resource.TACZGunPackPresentation
+import com.tacz.legacy.common.resource.TACZGunPackRuntimeRegistry
 import io.netty.buffer.ByteBuf
 import net.minecraft.client.Minecraft
 import net.minecraft.entity.EntityLivingBase
@@ -22,6 +24,9 @@ public class ServerMessageGunKill() : IMessage {
     private var baseDamage: Float = 0.0f
     private var isHeadShot: Boolean = false
     private var headShotMultiplier: Float = 1.0f
+    private var attackerName: String = ""
+    private var killedName: String = ""
+    private var distance: Float = 0.0f
 
     public constructor(
         bulletId: Int,
@@ -32,6 +37,9 @@ public class ServerMessageGunKill() : IMessage {
         baseDamage: Float,
         isHeadShot: Boolean,
         headShotMultiplier: Float,
+        attackerName: String = "",
+        killedName: String = "",
+        distance: Float = 0.0f,
     ) : this() {
         this.bulletId = bulletId
         this.killedEntityId = killedEntityId
@@ -41,6 +49,9 @@ public class ServerMessageGunKill() : IMessage {
         this.baseDamage = baseDamage
         this.isHeadShot = isHeadShot
         this.headShotMultiplier = headShotMultiplier
+        this.attackerName = attackerName
+        this.killedName = killedName
+        this.distance = distance
     }
 
     override fun fromBytes(buf: ByteBuf) {
@@ -52,6 +63,9 @@ public class ServerMessageGunKill() : IMessage {
         baseDamage = buf.readFloat()
         isHeadShot = buf.readBoolean()
         headShotMultiplier = buf.readFloat()
+        attackerName = ByteBufUtils.readUTF8String(buf)
+        killedName = ByteBufUtils.readUTF8String(buf)
+        distance = buf.readFloat()
     }
 
     override fun toBytes(buf: ByteBuf) {
@@ -63,6 +77,9 @@ public class ServerMessageGunKill() : IMessage {
         buf.writeFloat(baseDamage)
         buf.writeBoolean(isHeadShot)
         buf.writeFloat(headShotMultiplier)
+        ByteBufUtils.writeUTF8String(buf, attackerName)
+        ByteBufUtils.writeUTF8String(buf, killedName)
+        buf.writeFloat(distance)
     }
 
     public class Handler : IMessageHandler<ServerMessageGunKill, IMessage?> {
@@ -84,6 +101,15 @@ public class ServerMessageGunKill() : IMessage {
                         headShotMultiplier = message.headShotMultiplier,
                         logicalSide = Side.CLIENT,
                     ),
+                )
+                val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
+                val gunName = TACZGunPackPresentation.localizedGunName(snapshot, message.gunId)
+                com.tacz.legacy.client.event.KillFeedState.add(
+                    attacker = message.attackerName,
+                    killed = message.killedName,
+                    gunName = gunName,
+                    distance = message.distance,
+                    headShot = message.isHeadShot,
                 )
             }
             return null

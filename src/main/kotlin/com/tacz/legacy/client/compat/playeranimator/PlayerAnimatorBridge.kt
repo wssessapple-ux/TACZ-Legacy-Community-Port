@@ -77,6 +77,8 @@ internal class PlayerAnimatorBridge {
         var onceClip: String? = null
         var wasReloading: Boolean = false
         var hadAnimation: Boolean = false
+        /** FPV 遥控器姿势期间为 true：枪动画让路，不抢上层。 */
+        var fpvActive: Boolean = false
     }
 
     // ------------------------------------------------------------------ 资源
@@ -121,6 +123,16 @@ internal class PlayerAnimatorBridge {
             clipsByAnimation[fallbackId] = clips
             loadedFiles++
             loadedClips += clips.size
+        }
+
+        // FPV 遥控器姿势：内置循环 clip，不依赖任何枪包 display。
+        if (!clipsByAnimation.containsKey(FPV_REMOTE_ANIMATION)) {
+            val clips = loadClips(FPV_REMOTE_ANIMATION)
+            if (!clips.isNullOrEmpty()) {
+                clipsByAnimation[FPV_REMOTE_ANIMATION] = clips
+                loadedFiles++
+                loadedClips += clips.size
+            }
         }
 
         TACZLegacy.logger.info(
@@ -245,6 +257,8 @@ internal class PlayerAnimatorBridge {
 
     private fun updatePlayer(player: AbstractClientPlayer) {
         val layer = layerFor(player) ?: return
+        // FPV 遥控器姿势由 [startFpvPose] 驱动，枪动画层整段让路，避免每 tick 把遥控器 clip 淡出。
+        if (layer.fpvActive) return
         val clips = resolveClips(player.heldItemMainhand)
         if (clips == null) {
             if (layer.hadAnimation) {
@@ -310,6 +324,27 @@ internal class PlayerAnimatorBridge {
         RotationAdjustmentModifier.setEnabled(player, false, "stop-all")
         val layer = layers[player.uniqueID] ?: return
         fadeOut(layer)
+    }
+
+    /**
+     * FPV 进入：把内置遥控器循环姿势挂到上层。clip 缺失（资源没加载）就返回 false，
+     * 调用方据此退回原生静态抬臂兜底。
+     */
+    fun startFpvPose(player: AbstractClientPlayer): Boolean {
+        val layer = layerFor(player) ?: return false
+        val clip = clipsByAnimation[FPV_REMOTE_ANIMATION]?.get(CLIP_HOLD_REMOTE) ?: return false
+        layer.fpvActive = true
+        layer.loopUpper.replaceAnimationWithFade(fadeIn(FADE_LOOP), KeyframeAnimationPlayer(clip))
+        layer.loopUpperClip = CLIP_HOLD_REMOTE
+        return true
+    }
+
+    /** FPV 退出：淡出遥控器姿势，交还给枪动画 / 原生手臂。 */
+    fun stopFpvPose(player: AbstractClientPlayer) {
+        val layer = layers[player.uniqueID] ?: return
+        layer.fpvActive = false
+        layer.loopUpper.replaceAnimationWithFade(fadeIn(FADE_OUT), null)
+        layer.loopUpperClip = null
     }
 
     fun onShoot(player: EntityPlayer?) {
@@ -590,6 +625,7 @@ internal class PlayerAnimatorBridge {
         layer.lowerClip = null
         layer.loopUpperClip = null
         layer.onceClip = null
+        layer.fpvActive = false
     }
 
     private fun fadeIn(ticks: Int): AbstractFadeModifier = AbstractFadeModifier.standardFadeIn(ticks, Ease.INOUTSINE)
@@ -603,6 +639,10 @@ internal class PlayerAnimatorBridge {
         private val FALLBACK_PISTOL = ResourceLocation("tacz", "pistol_default.player_animation")
         private val FALLBACK_MINIGUN = ResourceLocation("tacz", "minigun.player_animation")
         private val FALLBACK_ANIMATIONS = listOf(FALLBACK_RIFLE, FALLBACK_PISTOL, FALLBACK_MINIGUN)
+
+        /** FPV 遥控器姿势内置动画文件与 clip 名。 */
+        private val FPV_REMOTE_ANIMATION = ResourceLocation("tacz", "fpv_remote.player_animation")
+        private const val CLIP_HOLD_REMOTE = "hold_remote"
 
         private val ID_LOWER = ResourceLocation("tacz_legacy", "lower_animation")
         private val ID_LOOP_UPPER = ResourceLocation("tacz_legacy", "loop_upper_animation")

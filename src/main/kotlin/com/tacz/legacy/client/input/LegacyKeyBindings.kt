@@ -18,6 +18,7 @@ internal object LegacyKeyBindings {
     internal val MELEE: KeyBinding = KeyBinding("key.tacz.melee.desc", KeyConflictContext.IN_GAME, Keyboard.KEY_V, CATEGORY)
     internal val INTERACT: KeyBinding = KeyBinding("key.tacz.interact.desc", KeyConflictContext.IN_GAME, Keyboard.KEY_O, CATEGORY)
     internal val REFIT: KeyBinding = KeyBinding("key.tacz.refit.desc", KeyConflictContext.IN_GAME, Keyboard.KEY_Z, CATEGORY)
+    internal val FPV_RETURN: KeyBinding = KeyBinding("key.tacz.fpv_return.desc", KeyConflictContext.IN_GAME, Keyboard.KEY_B, CATEGORY)
 
     private var registered: Boolean = false
 
@@ -34,5 +35,6 @@ internal object LegacyKeyBindings {
         ClientRegistry.registerKeyBinding(MELEE)
         ClientRegistry.registerKeyBinding(INTERACT)
         ClientRegistry.registerKeyBinding(REFIT)
+        ClientRegistry.registerKeyBinding(FPV_RETURN)
     }
 }

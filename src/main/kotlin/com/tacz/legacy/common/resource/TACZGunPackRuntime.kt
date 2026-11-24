@@ -873,22 +873,22 @@ internal object TACZModifierAudit {
     )
 
     private val audit: Map<String, AuditEntry> = linkedMapOf(
-        "ads" to AuditEntry(ConsumerStatus.GUI_ONLY, "GunRefitScreen", "改装台预览瞄准时间；战斗 aimTime 未应用配件值"),
-        "ammo_speed" to AuditEntry(ConsumerStatus.GUI_ONLY, "GunRefitScreen", "预览弹速；子弹 speed 用枪械基础值"),
-        "armor_ignore" to AuditEntry(ConsumerStatus.GUI_ONLY, "GunRefitScreen", "预览穿甲；子弹 armorIgnore 用基础 extraDamage"),
-        "damage" to AuditEntry(ConsumerStatus.GUI_ONLY, "GunRefitScreen", "预览伤害；子弹 damage 用基础值"),
-        "effective_range" to AuditEntry(ConsumerStatus.UNCONSUMED, "-", "注册读取但无人消费"),
-        "explosion" to AuditEntry(ConsumerStatus.UNCONSUMED, "-", "注册读取但无人消费"),
-        "head_shot" to AuditEntry(ConsumerStatus.GUI_ONLY, "GunRefitScreen", "预览爆头倍率；子弹 headShotMultiplier 用基础 extraDamage"),
+        "ads" to AuditEntry(ConsumerStatus.APPLIED, "LivingEntityAim.tick", "配件 ads eval 修正开镜时长"),
+        "ammo_speed" to AuditEntry(ConsumerStatus.APPLIED, "LivingEntityShoot.performSingleFire", "配件 eval 覆盖基础弹速"),
+        "armor_ignore" to AuditEntry(ConsumerStatus.APPLIED, "LegacyEntities.applyAttachmentModifiers", "配件 eval 覆盖穿甲比例"),
+        "damage" to AuditEntry(ConsumerStatus.APPLIED, "LegacyEntities.applyAttachmentDamageModifier", "配件逐距离段 eval 伤害"),
+        "effective_range" to AuditEntry(ConsumerStatus.APPLIED, "LegacyEntities.applyAttachmentEffectiveRange", "修正距离衰减曲线首段距离"),
+        "explosion" to AuditEntry(ConsumerStatus.APPLIED, "LegacyEntities.applyAttachmentExplosion", "配件爆炸属性聚合"),
+        "head_shot" to AuditEntry(ConsumerStatus.APPLIED, "LegacyEntities.applyAttachmentModifiers", "配件 eval 覆盖爆头倍率"),
         "ignite" to AuditEntry(ConsumerStatus.APPLIED, "LivingEntityShoot.performSingleFire", "配件点燃覆盖子弹 igniteEntity/igniteBlock"),
         "inaccuracy" to AuditEntry(ConsumerStatus.APPLIED, "TACZGunPropertyResolver.resolveInaccuracyProfile", "战斗精度"),
-        "knockback" to AuditEntry(ConsumerStatus.UNCONSUMED, "-", "注册读取但无人消费"),
-        "pierce" to AuditEntry(ConsumerStatus.UNCONSUMED, "-", "注册读取但无人消费"),
-        "movement_speed" to AuditEntry(ConsumerStatus.UNCONSUMED, "-", "注册读取但无人消费"),
+        "knockback" to AuditEntry(ConsumerStatus.UNCONSUMED, "-", "豁免：命中击退已整体移除（applyImpactKnockback 已删），无消费点"),
+        "pierce" to AuditEntry(ConsumerStatus.APPLIED, "LegacyEntities.applyAttachmentModifiers", "配件 eval 覆盖穿透次数"),
+        "movement_speed" to AuditEntry(ConsumerStatus.APPLIED, "LivingEntitySpeedModifier.updateSpeedModifier", "枪本体三档起步 + 配件三分量叠加（MULTIPLY_TOTAL）"),
         "recoil" to AuditEntry(ConsumerStatus.APPLIED, "TACZGunPropertyResolver.resolveCameraRecoil", "后坐力"),
-        "rpm" to AuditEntry(ConsumerStatus.GUI_ONLY, "GunRefitScreen", "预览射速；射速用基础 rpm"),
+        "rpm" to AuditEntry(ConsumerStatus.APPLIED, "LivingEntityShoot/TACZGunScriptAPI/LegacyClientShootCoordinator", "射速间隔 eval 配件 rpm modifier"),
         "silence" to AuditEntry(ConsumerStatus.APPLIED, "TACZGunSoundRouting.resolveNearbyFireSoundProfile", "开火声音距离/消音"),
-        "weight_modifier" to AuditEntry(ConsumerStatus.GUI_ONLY, "GunRefitScreen", "预览重量；移动速度用基础值"),
+        "weight_modifier" to AuditEntry(ConsumerStatus.APPLIED, "LivingEntitySpeedModifier.updateSpeedModifier", "重量惩罚 eval（MULTIPLY_BASE）"),
     )
 
     internal fun logAudit() {
