@@ -290,10 +290,11 @@
 
 ### 🧰 维护者的其他小工具
 
-主业之外顺手做的两件小事，不影响本模组的更新节奏：
+主业之外顺手做的几件小事，不影响本模组的更新节奏：
 
 - **[simple-trainer-1.9-zh-community](https://github.com/wssessapple-ux/simple-trainer-1.9-zh-community)** —— 给 GTA V `1.0.463.1` 上的 Simple Trainer 1.9 做中文菜单。老游戏的字体只有繁体字形，所以走的是「写繁体码位、用简体词汇」的路子：1942 条译文，仓库里只有偏移表和打补丁/校验脚本，不含改好的二进制。
 - 在这套工具里能看到一个和本模组同类的问题：**老版本的底层限制怎么绕**。比如 `Options` 那条串同时被车牌编辑功能引用，一改短就让游戏加载崩溃，最后只能永久保留英文——这类「改不了就只能认」的结论都写在仓库的 `dict/protected.txt` 里。
+- **[gta5-legacy-check](https://github.com/wssessapple-ux/gta5-legacy-check)** —— GTA V 老版本的环境体检脚本。只读扫一遍游戏目录就能告诉你 exe 和 ScriptHookV 版本配不配、ASI 加载器/OpenIV 缺没缺、修改器是不是跟游戏版本跨度太大。跟上面那个一样：先定位，再动手。
 
 ---
 
