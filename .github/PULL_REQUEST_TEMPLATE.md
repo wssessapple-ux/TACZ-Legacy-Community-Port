@@ -1,6 +1,6 @@
 <!--
 PR 标题建议带类型前缀，例如：fix: / feat: / compat: / docs: / i18n: / refactor:
-填写前请先阅读 CONTRIBUTING.md：https://github.com/wssessapple-ux/TACZ-Legacy/blob/master/CONTRIBUTING.md
+填写前请先阅读 CONTRIBUTING.md：https://github.com/wssessapple-ux/TACZ-Legacy-Community-Port/blob/master/CONTRIBUTING.md
 -->
 
 ## 📝 变更说明

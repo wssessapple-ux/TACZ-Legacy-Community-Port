@@ -1,4 +1,4 @@
-# TACZ-Legacy CI 编译守门
+# TaCZ Legacy: Community Port CI 编译守门
 #
 # 目标：在 push / PR 到 master 时，只做最小编译校验，拦截主源码编译不过的改动。
 # 不跑客户端 / 服务端实例——1.12.2 客户端烟测需要图形环境与完整 MC 资源，不适合 GitHub Actions，

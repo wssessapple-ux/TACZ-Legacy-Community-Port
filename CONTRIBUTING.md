@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢你愿意为 **TACZ-Legacy** 出力。本项目是 TaCZ 在 **Minecraft 1.12.2 Forge** 上的非官方社区移植工程，采用 Kotlin + RetroFuturaGradle，以 GPL-3.0 开源。
+感谢你愿意为 **TaCZ Legacy: Community Port** 出力。本项目是 TaCZ 在 **Minecraft 1.12.2 Forge** 上的非官方社区移植工程，采用 Kotlin + RetroFuturaGradle，以 GPL-3.0 开源。
 
 这份指南帮你在动手之前看清：**哪些改动欢迎、怎么把本地跑起来、提交 PR 前要过哪些自检**。开工前先读完，能减少来回沟通。
 

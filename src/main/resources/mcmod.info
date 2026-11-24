@@ -1,11 +1,11 @@
 [
 {
   "modid": "tacz",
-  "name": "Timeless & Classics Guns: Legacy",
+  "name": "TaCZ Legacy: Community Port",
   "description": "TACZ 的 1.12.2 Kotlin 独立移植工程（开发中）。",
   "version": "${version}",
   "mcversion": "${mcversion}",
-  "url": "https://github.com/wssessapple-ux/TACZ-Legacy",
+  "url": "https://github.com/wssessapple-ux/TACZ-Legacy-Community-Port",
   "updateUrl": "",
   "authorList": ["KasumiNova", "wssessapple-ux", "TACZ Contributors"],
   "credits": "Original TACZ team and open-source contributors",

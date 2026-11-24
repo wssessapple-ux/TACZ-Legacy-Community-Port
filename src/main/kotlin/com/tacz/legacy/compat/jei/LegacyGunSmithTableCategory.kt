@@ -29,7 +29,7 @@ public class LegacyGunSmithTableCategory(
 
     override fun getTitle(): String = title
 
-    override fun getModName(): String = "TACZ-Legacy"
+    override fun getModName(): String = "TaCZ Legacy: Community Port"
 
     override fun getBackground(): IDrawable = background
 

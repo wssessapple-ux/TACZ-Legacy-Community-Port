@@ -1,4 +1,4 @@
-# TACZ-Legacy
+# TaCZ Legacy: Community Port
 
 > ⚠️【非官方移植构建版】本项目为社区非官方移植，与原作者及官方 TaCZ 项目无关。
 
@@ -137,9 +137,9 @@
 - **走路开背包可能偶发第一人称动作异常**：等待反馈确认修复中。
 - **性能问题**：部分场景帧率下降、内存占用偏高，后续将持续优化。
 
-**完整已知问题列表请查看 [GitHub Discussions](https://github.com/wssessapple-ux/TACZ-Legacy/discussions)。**
+**完整已知问题列表请查看 [GitHub Discussions](https://github.com/wssessapple-ux/TACZ-Legacy-Community-Port/discussions)。**
 
-# TACZ-Legacy 生存模式合成指南 (v0.5.0)
+# TaCZ Legacy: Community Port 生存模式合成指南 (v0.5.0)
 
 在 0.5.0 版本中，我们补齐了生存模式的基础设施。以下是所有新增方块与物品的合成配方。
 
@@ -298,7 +298,7 @@
 
 ---
 
-`TACZ-Legacy` 是 `TACZ` 的 **Minecraft 1.12.2 Forge 移植工程**，并采用 **Kotlin + RetroFuturaGradle** 技术栈。
+`TaCZ Legacy: Community Port` 是 `TACZ` 的 **Minecraft 1.12.2 Forge 移植工程**，并采用 **Kotlin + RetroFuturaGradle** 技术栈。
 
 ## 项目目标
 

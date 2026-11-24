@@ -29,5 +29,4 @@ dependencyResolutionManagement {
 }
 
 // Due to an IntelliJ bug, this has to be done
-// rootProject.name = archives_base_name
-rootProject.name = rootProject.projectDir.getName()
+rootProject.name = settings.extra.properties["archives_base_name"].toString()
