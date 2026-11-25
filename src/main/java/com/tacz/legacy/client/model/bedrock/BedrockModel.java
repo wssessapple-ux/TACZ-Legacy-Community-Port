@@ -112,14 +112,14 @@ public class BedrockModel {
                 @Nullable List<Float> cubeRotation = cube.getRotation();
 
                 if (cubeRotation == null) {
-                    model.cubes.add(createCube(cube,
+                    model.cubes.add(createCube(bones, cube,
                             convertOrigin(bones, cube, 0), convertOrigin(bones, cube, 1), convertOrigin(bones, cube, 2),
                             texWidth, texHeight, faceUv));
                 } else {
                     BedrockPart cubeRenderer = new BedrockPart(null);
                     cubeRenderer.setPos(convertPivot(bones, cube, 0), convertPivot(bones, cube, 1), convertPivot(bones, cube, 2));
                     setRotationAngle(cubeRenderer, convertRotation(cubeRotation.get(0)), convertRotation(cubeRotation.get(1)), convertRotation(cubeRotation.get(2)));
-                    cubeRenderer.cubes.add(createCube(cube,
+                    cubeRenderer.cubes.add(createCube(bones, cube,
                             convertOrigin(cube, 0), convertOrigin(cube, 1), convertOrigin(cube, 2),
                             texWidth, texHeight, faceUv));
                     model.addChild(cubeRenderer);
@@ -179,7 +179,7 @@ public class BedrockModel {
                 List<Float> uv = cube.getUv();
                 List<Float> cubeSize = cube.getSize();
                 boolean mirror = cube.isMirror();
-                float inflate = cube.getInflate();
+                float inflate = cube.getInflate() + getExtraCubeInflate(bones);
 
                 model.cubes.add(new BedrockCubeBox(uv.get(0), uv.get(1),
                         convertOrigin(bones, cube, 0), convertOrigin(bones, cube, 1), convertOrigin(bones, cube, 2),
@@ -239,12 +239,21 @@ public class BedrockModel {
      * 按 cube 的 {@code shape} 构造几何图元：默认 box（box/per-face UV），
      * {@code cylinder} 平滑圆柱、{@code sphere} 球、{@code prism} 硬边多边形棱柱。
      */
-    protected BedrockCube createCube(CubesItem cube, float ox, float oy, float oz,
+    /**
+     * Extra inflate applied to cubes belonging to a matching bone (e.g. scope ocular nodes).
+     * Base implementation adds nothing; attachment models override to close small gaps that
+     * otherwise flicker as black spots when viewing through an optic.
+     */
+    protected float getExtraCubeInflate(BonesItem bone) {
+        return 0.0F;
+    }
+
+    protected BedrockCube createCube(BonesItem bone, CubesItem cube, float ox, float oy, float oz,
                                      int texWidth, int texHeight, @Nullable FaceUVsItem faceUv) {
         List<Float> uv = cube.getUv();
         List<Float> size = cube.getSize();
         boolean mirror = cube.isMirror();
-        float inflate = cube.getInflate();
+        float inflate = cube.getInflate() + getExtraCubeInflate(bone);
         String shape = cube.getShape();
 
         if ("cylinder".equals(shape)) {

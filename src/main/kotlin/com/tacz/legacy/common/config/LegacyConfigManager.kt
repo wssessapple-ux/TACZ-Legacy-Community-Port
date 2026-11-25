@@ -59,6 +59,8 @@ internal data class ClientConfigValues(
     var blockEntityTranslucent: Boolean = false,
     var screenDistanceCoefficient: Double = 1.33,
     var zoomSensitivityBaseMultiplier: Double = 1.0,
+    var enableOcularInflate: Boolean = true,
+    var ocularInflate: Double = 0.0005,
 )
 
 internal data class ServerConfigValues(
@@ -188,6 +190,12 @@ internal object LegacyConfigManager {
     @JvmStatic
     fun isLaserFadeOutEnabledForJava(): Boolean = client.enableLaserFadeOut
 
+    @JvmStatic
+    fun isOcularInflateEnabledForJava(): Boolean = client.enableOcularInflate
+
+    @JvmStatic
+    fun getOcularInflateForJava(): Float = client.ocularInflate.toFloat()
+
     private fun loadCommonConfig(cfg: Configuration): Unit {
         commonConfig = cfg
         try {
@@ -313,6 +321,15 @@ internal object LegacyConfigManager {
 
             client.screenDistanceCoefficient = cfg.getFloat("ScreenDistanceCoefficient", "Zoom", 1.33f, 0.0f, 3.0f, "Screen distance coefficient for zoom.").toDouble()
             client.zoomSensitivityBaseMultiplier = cfg.getFloat("ZoomSensitivityBaseMultiplier", "Zoom", 1.0f, 0.0f, 2.0f, "Zoom sensitivity base multiplier.").toDouble()
+
+            client.enableOcularInflate = cfg.getBoolean(
+                "EnableOcularInflate", "render", true,
+                "Try enabling this if you see flickering black spots when aiming through a scope. Expands ocular cubes during model baking to close small gaps. Reload client resources after changing this setting."
+            )
+            client.ocularInflate = cfg.getFloat(
+                "OcularInflate", "render", 0.0005f, 0.0f, Float.MAX_VALUE,
+                "Extra inflate added to ocular cubes in Bedrock model units. Requires EnableOcularInflate. Reload client resources after changing this setting."
+            ).toDouble()
         } catch (t: Throwable) {
             TACZLegacy.logger.warn("Failed to load ${side.name.lowercase()} config, using defaults.", t)
         } finally {
