@@ -22,7 +22,18 @@ import java.util.Random;
  * (GlStateManager + Tessellator instead of PoseStack + VertexConsumer).
  */
 public class BedrockPart {
-    private static final FloatBuffer MATRIX_BUFFER = BufferUtils.createFloatBuffer(16);
+    @Nullable
+    private static FloatBuffer MATRIX_BUFFER;
+
+    /** Lazily allocated on the GL thread so class loading does not hard-depend on LWJGL. */
+    private static FloatBuffer matrixBuffer() {
+        FloatBuffer buffer = MATRIX_BUFFER;
+        if (buffer == null) {
+            buffer = BufferUtils.createFloatBuffer(16);
+            MATRIX_BUFFER = buffer;
+        }
+        return buffer;
+    }
 
     @Nullable
     public final String name;
@@ -136,10 +147,11 @@ public class BedrockPart {
             return;
         }
         Matrix4f mat = new Matrix4f().rotation(q);
-        MATRIX_BUFFER.clear();
-        mat.get(MATRIX_BUFFER);
-        MATRIX_BUFFER.rewind();
-        GL11.glMultMatrix(MATRIX_BUFFER);
+        FloatBuffer buffer = matrixBuffer();
+        buffer.clear();
+        mat.get(buffer);
+        buffer.rewind();
+        GL11.glMultMatrix(buffer);
     }
 
     public BedrockCube getRandomCube(Random random) {

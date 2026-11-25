@@ -1,6 +1,7 @@
 package com.tacz.legacy.client.renderer.gltf
 
 import com.tacz.legacy.TACZLegacy
+import com.tacz.legacy.client.model.mesh.MaterialResolver
 import com.tacz.legacy.client.model.mesh.Mesh
 import com.tacz.legacy.client.resource.TACZClientAssetManager
 import com.tacz.legacy.client.resource.gltf.GltfMeshParser
@@ -39,6 +40,14 @@ internal object GltfMeshRenderer {
 
     /** Cached managed OBJ meshes keyed by model location; null means missing/invalid. */
     private val managedObjMeshes = LinkedHashMap<ResourceLocation, Mesh?>()
+
+    /**
+     * Optional per-group material-key → texture resolver attached to every cached
+     * mesh. Null (the default) leaves each group on the texture the caller already
+     * bound; wire this up when a multi-texture model needs per-group texture binds.
+     */
+    @Volatile
+    var materialResolver: MaterialResolver? = null
 
     /**
      * Draw a built-in classpath glTF model.
@@ -96,7 +105,7 @@ internal object GltfMeshRenderer {
     ): Mesh? {
         cache[id]?.let { return it }
         val data = loader(id)
-        val mesh = data?.let { Mesh(it, tag) }
+        val mesh = data?.let { Mesh(it, tag).apply { materialResolver = this@GltfMeshRenderer.materialResolver } }
         cache[id] = mesh
         return mesh
     }
@@ -118,7 +127,9 @@ internal object GltfMeshRenderer {
                         .getResourceAsStream(binPath)
                         ?.use { it.readBytes() }
                 }
-                Mesh(data, "bundled:$fileName")
+                Mesh(data, "bundled:$fileName").apply {
+                    materialResolver = this@GltfMeshRenderer.materialResolver
+                }
             }.onFailure { error ->
                 TACZLegacy.logger.warn("[GltfMeshRenderer] Failed to parse bundled glTF {}: {}", fileName, error.message)
             }.getOrNull()

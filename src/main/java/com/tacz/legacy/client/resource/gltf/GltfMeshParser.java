@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.tacz.legacy.client.resource.mesh.MeshGroup;
 import com.tacz.legacy.client.resource.mesh.StaticMeshData;
 
 import javax.annotation.Nullable;
@@ -13,13 +14,15 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Minimal glTF 2.0 static mesh parser for Blockbench-exported models. Decodes
- * POSITION / NORMAL / TEXCOORD_0 attributes and triangle indices, merging every
- * primitive of every mesh into one {@link StaticMeshData}.
+ * POSITION / NORMAL / TEXCOORD_0 attributes and triangle indices, grouping
+ * primitives by their {@code material} into {@link MeshGroup material groups}.
  *
  * <p>Supported subset:
  * <ul>
@@ -28,7 +31,7 @@ import java.util.Locale;
  *   <li>primitive mode 4 (TRIANGLES) only; STRIP / FAN are skipped</li>
  *   <li>missing normals are computed per-face (flat) by cross product</li>
  * </ul>
- * Skins, morph targets, sparse accessors and multi-material groups are not handled.
+ * Skins, morph targets, sparse accessors and texture URI resolution are not handled.
  */
 public final class GltfMeshParser {
 
@@ -53,21 +56,14 @@ public final class GltfMeshParser {
         JsonArray accessorsArray = getArray(root, "accessors");
         JsonArray bufferViewsArray = getArray(root, "bufferViews");
         JsonArray buffersArray = getArray(root, "buffers");
+        JsonArray materialsArray = getArray(root, "materials");
 
         List<byte[]> buffers = new ArrayList<>(buffersArray.size());
         for (JsonElement element : buffersArray) {
             buffers.add(decodeBuffer(element.getAsJsonObject(), resolver));
         }
 
-        List<float[]> allPositions = new ArrayList<>();
-        List<float[]> allUvs = new ArrayList<>();
-        List<float[]> allNormals = new ArrayList<>();
-        List<int[]> allIndices = new ArrayList<>();
-
-        int vertexOffset = 0;
-        // Per-primitive bookkeeping so flat normals can be filled after the merge.
-        List<int[]> flatIndexSegments = new ArrayList<>();
-        List<Boolean> primitiveNeedsNormals = new ArrayList<>();
+        Map<String, GroupBuilder> groups = new LinkedHashMap<>();
 
         for (JsonElement meshElement : meshesArray) {
             JsonObject mesh = meshElement.getAsJsonObject();
@@ -111,30 +107,69 @@ public final class GltfMeshParser {
                         indices[i] = i;
                     }
                 }
-                // Remap local indices to the accumulated vertex range.
+
+                String materialKey = materialKey(primitive, materialsArray);
+                GroupBuilder group = groups.computeIfAbsent(materialKey, GroupBuilder::new);
+
+                // Remap local indices to this group's accumulated vertex range.
                 for (int i = 0; i < indices.length; i++) {
-                    indices[i] += vertexOffset;
+                    indices[i] += group.vertexOffset;
                 }
 
-                allPositions.add(positions);
-                allUvs.add(uvs);
-                allNormals.add(normals);
-                allIndices.add(indices);
-                flatIndexSegments.add(indices);
-                primitiveNeedsNormals.add(!hasNormal);
-
-                vertexOffset += vertexCount;
+                group.partsPos.add(positions);
+                group.partsUv.add(uvs);
+                group.partsNormal.add(normals);
+                group.partsIndex.add(indices);
+                group.needsNormal.add(!hasNormal);
+                group.vertexOffset += vertexCount;
             }
         }
 
-        float[] mergedPositions = concatFloat(allPositions, 3 * vertexOffset);
-        float[] mergedUvs = concatFloat(allUvs, 2 * vertexOffset);
-        float[] mergedNormals = concatFloat(allNormals, 3 * vertexOffset);
-        int[] mergedIndices = concatInt(allIndices);
+        List<MeshGroup> result = new ArrayList<>();
+        for (GroupBuilder group : groups.values()) {
+            if (group.partsIndex.isEmpty()) {
+                continue;
+            }
+            float[] mergedPositions = concatFloat(group.partsPos, 3 * group.vertexOffset);
+            float[] mergedUvs = concatFloat(group.partsUv, 2 * group.vertexOffset);
+            float[] mergedNormals = concatFloat(group.partsNormal, 3 * group.vertexOffset);
+            int[] mergedIndices = concatInt(group.partsIndex);
 
-        fillFlatNormals(mergedPositions, mergedNormals, flatIndexSegments, primitiveNeedsNormals);
+            fillFlatNormals(mergedPositions, mergedNormals, group.partsIndex, group.needsNormal);
+            result.add(new MeshGroup(group.key, mergedPositions, mergedUvs, mergedNormals, mergedIndices));
+        }
+        return new StaticMeshData(result);
+    }
 
-        return new StaticMeshData(mergedPositions, mergedUvs, mergedNormals, mergedIndices);
+    /** Per-material-group accumulated primitive segments. */
+    private static final class GroupBuilder {
+        @Nullable
+        private final String key;
+        private final List<float[]> partsPos = new ArrayList<>();
+        private final List<float[]> partsUv = new ArrayList<>();
+        private final List<float[]> partsNormal = new ArrayList<>();
+        private final List<int[]> partsIndex = new ArrayList<>();
+        private final List<Boolean> needsNormal = new ArrayList<>();
+        private int vertexOffset = 0;
+
+        private GroupBuilder(@Nullable String key) {
+            this.key = key;
+        }
+    }
+
+    /** Resolve the primitive's material to a stable key; {@code null} when it has no material. */
+    @Nullable
+    private static String materialKey(JsonObject primitive, JsonArray materialsArray) {
+        if (!primitive.has("material")) {
+            return null;
+        }
+        int materialIndex = primitive.get("material").getAsInt();
+        if (materialIndex < 0 || materialIndex >= materialsArray.size()) {
+            return null;
+        }
+        JsonObject material = materialsArray.get(materialIndex).getAsJsonObject();
+        String name = optionalString(material, "name", "");
+        return name.isEmpty() ? "material:" + materialIndex : name;
     }
 
     /** Compute a face normal per triangle and write it to the three vertices when the source lacked normals. */

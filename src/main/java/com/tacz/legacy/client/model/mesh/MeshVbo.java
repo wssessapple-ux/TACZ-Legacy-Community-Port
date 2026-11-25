@@ -1,19 +1,26 @@
 package com.tacz.legacy.client.model.mesh;
 
 import com.tacz.legacy.TACZLegacy;
+import com.tacz.legacy.client.resource.mesh.MeshGroup;
 import com.tacz.legacy.client.resource.mesh.StaticMeshData;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.OpenGLException;
 
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.ShortBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * GPU-side cached static mesh with an explicit upload state machine.
+ * GPU-side cached static mesh with an explicit upload state machine, split one
+ * {@link GroupVbo buffer pair} per {@link MeshGroup material group}.
  *
+ * <p>Group state machine:
  * <ul>
  *   <li>{@link State#NEW} — not uploaded yet (one-time not-ready).</li>
  *   <li>{@link State#READY} — buffers uploaded, draw from GPU memory.</li>
@@ -22,6 +29,9 @@ import java.nio.ShortBuffer;
  *   <li>{@link State#FAILED} — persistent failure; permanently degraded to the
  *       immediate-mode fallback and never retried.</li>
  * </ul>
+ *
+ * <p>One group failing does not pull the others down: ready groups keep drawing
+ * from the VBO while the failed group falls back to immediate mode.
  *
  * <p>All GL calls run on the render thread. Telemetry is reported through
  * {@link MeshVboStats}; a persistent failure logs one WARN carrying the GL
@@ -41,80 +51,91 @@ public final class MeshVbo {
     /** GL_OUT_OF_MEMORY — recoverable: drop buffers and retry next frame. */
     private static final int GL_OUT_OF_MEMORY = 0x0505;
 
-    private State state = State.NEW;
-    private int vboId = 0;
-    private int iboId = 0;
-    private int indexCount = 0;
-    private int indexType = GL11.GL_UNSIGNED_SHORT;
-    private int vertexCount = 0;
-    private long liveBytes = 0;
+    private final List<GroupVbo> groups = new ArrayList<>();
     private float cachedScale = Float.NaN;
     private boolean cachedFlipY;
 
-    public State getState() {
-        return state;
-    }
-
     public boolean isReady() {
-        return state == State.READY;
+        for (GroupVbo group : groups) {
+            if (group.isReady()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public boolean isFailed() {
-        return state == State.FAILED;
+        if (groups.isEmpty()) {
+            return false;
+        }
+        for (GroupVbo group : groups) {
+            if (!group.isFailed()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Mark the cached buffers stale (e.g. scale/flipY changed). READY goes DIRTY; FAILED stays degraded. */
     public void markDirty() {
-        if (state == State.READY) {
-            destroyBuffers();
-            state = State.DIRTY;
+        for (GroupVbo group : groups) {
+            group.markDirty();
         }
     }
 
     /**
      * Ensure buffers are uploaded for the given transform.
      *
-     * @return true when the mesh is ready to draw from the VBO; false when the
-     *         caller must use the immediate-mode fallback (recoverable retry next
-     *         frame, or permanent degradation).
+     * @return true when at least one group is ready to draw from the VBO; false
+     *         when the caller must use the immediate-mode fallback for the whole
+     *         mesh (recoverable retry next frame, or permanent degradation).
      */
     public boolean ensureUploaded(StaticMeshData data, float scale, boolean flipY, String tag) {
-        if (state == State.FAILED) {
-            return false;
-        }
-        if (state == State.READY && cachedScale == scale && cachedFlipY == flipY) {
-            return true;
-        }
-        if (state == State.READY) {
-            destroyBuffers();
-        }
-
-        try {
-            upload(data, scale, flipY);
-            state = State.READY;
+        List<MeshGroup> source = data.getGroups();
+        boolean transformChanged = cachedScale != scale || cachedFlipY != flipY;
+        if (groups.size() != source.size() || transformChanged) {
+            destroyAll();
             cachedScale = scale;
             cachedFlipY = flipY;
-            MeshVboStats.INSTANCE.recordRebuild();
-            return true;
-        } catch (Throwable t) {
-            int err = GL11.glGetError();
-            boolean recoverable = (t instanceof OpenGLException) && err == GL_OUT_OF_MEMORY;
-            destroyBuffers();
-            if (recoverable) {
-                state = State.DIRTY;
-                MeshVboStats.INSTANCE.recordRecoverableFailure();
-            } else {
-                state = State.FAILED;
-                MeshVboStats.INSTANCE.recordPersistentFailure();
-                logPersistentFailure(tag, t, err);
+            for (int i = 0; i < source.size(); i++) {
+                groups.add(new GroupVbo());
             }
-            return false;
         }
+
+        boolean anyReady = false;
+        for (int i = 0; i < groups.size(); i++) {
+            if (groups.get(i).ensureUploaded(source.get(i), scale, flipY, tag)) {
+                anyReady = true;
+            }
+        }
+        return anyReady;
     }
 
-    /** Draw the cached mesh. Caller must have bound the texture and set up lighting. */
+    /** Per-group hook fired right before a ready group is drawn, so the caller can bind its texture. */
+    @FunctionalInterface
+    public interface GroupBinder {
+        void beforeDraw(MeshGroup group);
+    }
+
+    /** Draw every ready group with no per-group texture override. */
     public void draw() {
-        if (state != State.READY) {
+        draw(null);
+    }
+
+    /**
+     * Draw every ready group. For each group the optional {@code binder} runs
+     * before that group's buffer is drawn, allowing a per-group texture bind.
+     * Caller must have set up lighting; texture binding is handled by the binder.
+     */
+    public void draw(@Nullable GroupBinder binder) {
+        boolean anyReady = false;
+        for (GroupVbo group : groups) {
+            if (group.isReady()) {
+                anyReady = true;
+                break;
+            }
+        }
+        if (!anyReady) {
             return;
         }
 
@@ -122,13 +143,14 @@ public final class MeshVbo {
         GL11.glEnableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
         GL11.glEnableClientState(GL11.GL_NORMAL_ARRAY);
 
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL11.glVertexPointer(3, GL11.GL_FLOAT, STRIDE_BYTES, 0L);
-        GL11.glTexCoordPointer(2, GL11.GL_FLOAT, STRIDE_BYTES, OFFSET_TEX);
-        GL11.glNormalPointer(GL11.GL_FLOAT, STRIDE_BYTES, OFFSET_NORMAL);
-
-        GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, iboId);
-        GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, indexType, 0L);
+        for (GroupVbo group : groups) {
+            if (group.isReady()) {
+                if (binder != null) {
+                    binder.beforeDraw(group.materialGroup);
+                }
+                group.draw();
+            }
+        }
 
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -138,65 +160,169 @@ public final class MeshVbo {
         GL11.glDisableClientState(GL11.GL_VERTEX_ARRAY);
     }
 
-    /** Release the cached VBO/IBO and reset to NEW. */
+    /** Release every cached VBO/IBO and reset to NEW. */
     public void destroy() {
-        destroyBuffers();
-        state = State.NEW;
+        destroyAll();
         cachedScale = Float.NaN;
     }
 
-    private void upload(StaticMeshData data, float scale, boolean flipY) {
-        vertexCount = data.getVertexCount();
-        if (vertexCount == 0 || data.getIndices().length == 0) {
-            throw new IllegalStateException("empty mesh");
+    private void destroyAll() {
+        for (GroupVbo group : groups) {
+            group.destroy();
+        }
+        groups.clear();
+    }
+
+    /** One material group's own GL buffer pair and upload state. */
+    private final class GroupVbo {
+
+        private MeshGroup materialGroup;
+        private State state = State.NEW;
+        private int vboId = 0;
+        private int iboId = 0;
+        private int indexCount = 0;
+        private int indexType = GL11.GL_UNSIGNED_SHORT;
+        private int vertexCount = 0;
+        private long liveBytes = 0;
+        private float cachedScale = Float.NaN;
+        private boolean cachedFlipY;
+
+        boolean isReady() {
+            return state == State.READY;
         }
 
-        float[] positions = data.getPositions();
-        float[] uvs = data.getUvs();
-        float[] normals = data.getNormals();
-        int[] indices = data.getIndices();
-        float[] out = new float[6];
-
-        FloatBuffer vertices = BufferUtils.createFloatBuffer(vertexCount * 8);
-        for (int i = 0; i < vertexCount; i++) {
-            MeshTransform.transform(positions, normals, i, scale, flipY, out);
-            vertices.put(out[0]).put(out[1]).put(out[2]);
-            vertices.put(uvs[i * 2]).put(uvs[i * 2 + 1]);
-            vertices.put(out[3]).put(out[4]).put(out[5]);
+        boolean isFailed() {
+            return state == State.FAILED;
         }
-        vertices.flip();
 
-        vboId = GL15.glGenBuffers();
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, vertices, GL15.GL_STATIC_DRAW);
-
-        iboId = GL15.glGenBuffers();
-        GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, iboId);
-
-        if (vertexCount <= 65535) {
-            ShortBuffer indexBuffer = BufferUtils.createShortBuffer(indices.length);
-            for (int index : indices) {
-                indexBuffer.put((short) index);
+        void markDirty() {
+            if (state == State.READY) {
+                destroyBuffers();
+                state = State.DIRTY;
             }
-            indexBuffer.flip();
-            GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuffer, GL15.GL_STATIC_DRAW);
-            indexType = GL11.GL_UNSIGNED_SHORT;
-        } else {
-            IntBuffer indexBuffer = BufferUtils.createIntBuffer(indices.length);
-            for (int index : indices) {
-                indexBuffer.put(index);
-            }
-            indexBuffer.flip();
-            GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuffer, GL15.GL_STATIC_DRAW);
-            indexType = GL11.GL_UNSIGNED_INT;
         }
 
-        indexCount = indices.length;
-        liveBytes = vertexCount * 8L * 4L + indexCount * (indexType == GL11.GL_UNSIGNED_SHORT ? 2L : 4L);
-        MeshVboStats.INSTANCE.addLive(liveBytes);
+        boolean ensureUploaded(MeshGroup group, float scale, boolean flipY, String tag) {
+            this.materialGroup = group;
+            if (state == State.FAILED) {
+                return false;
+            }
+            if (state == State.READY && cachedScale == scale && cachedFlipY == flipY) {
+                return true;
+            }
+            if (state == State.READY) {
+                destroyBuffers();
+            }
 
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
+            try {
+                upload(group, scale, flipY);
+                state = State.READY;
+                cachedScale = scale;
+                cachedFlipY = flipY;
+                MeshVboStats.INSTANCE.recordRebuild();
+                return true;
+            } catch (Throwable t) {
+                int err = GL11.glGetError();
+                boolean recoverable = (t instanceof OpenGLException) && err == GL_OUT_OF_MEMORY;
+                destroyBuffers();
+                if (recoverable) {
+                    state = State.DIRTY;
+                    MeshVboStats.INSTANCE.recordRecoverableFailure();
+                } else {
+                    state = State.FAILED;
+                    MeshVboStats.INSTANCE.recordPersistentFailure();
+                    logPersistentFailure(tag, t, err);
+                }
+                return false;
+            }
+        }
+
+        void draw() {
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+            GL11.glVertexPointer(3, GL11.GL_FLOAT, STRIDE_BYTES, 0L);
+            GL11.glTexCoordPointer(2, GL11.GL_FLOAT, STRIDE_BYTES, OFFSET_TEX);
+            GL11.glNormalPointer(GL11.GL_FLOAT, STRIDE_BYTES, OFFSET_NORMAL);
+
+            GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, iboId);
+            GL11.glDrawElements(GL11.GL_TRIANGLES, indexCount, indexType, 0L);
+        }
+
+        void destroy() {
+            destroyBuffers();
+            state = State.NEW;
+            cachedScale = Float.NaN;
+        }
+
+        private void upload(MeshGroup group, float scale, boolean flipY) {
+            vertexCount = group.getVertexCount();
+            int[] indices = group.getIndices();
+            if (vertexCount == 0 || indices.length == 0) {
+                throw new IllegalStateException("empty mesh group");
+            }
+
+            float[] positions = group.getPositions();
+            float[] uvs = group.getUvs();
+            float[] normals = group.getNormals();
+            float[] out = new float[6];
+
+            FloatBuffer vertices = BufferUtils.createFloatBuffer(vertexCount * 8);
+            for (int i = 0; i < vertexCount; i++) {
+                MeshTransform.transform(positions, normals, i, scale, flipY, out);
+                vertices.put(out[0]).put(out[1]).put(out[2]);
+                vertices.put(uvs[i * 2]).put(uvs[i * 2 + 1]);
+                vertices.put(out[3]).put(out[4]).put(out[5]);
+            }
+            vertices.flip();
+
+            vboId = GL15.glGenBuffers();
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vboId);
+            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, vertices, GL15.GL_STATIC_DRAW);
+
+            iboId = GL15.glGenBuffers();
+            GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, iboId);
+
+            if (vertexCount <= 65535) {
+                ShortBuffer indexBuffer = BufferUtils.createShortBuffer(indices.length);
+                for (int index : indices) {
+                    indexBuffer.put((short) index);
+                }
+                indexBuffer.flip();
+                GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuffer, GL15.GL_STATIC_DRAW);
+                indexType = GL11.GL_UNSIGNED_SHORT;
+            } else {
+                IntBuffer indexBuffer = BufferUtils.createIntBuffer(indices.length);
+                for (int index : indices) {
+                    indexBuffer.put(index);
+                }
+                indexBuffer.flip();
+                GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuffer, GL15.GL_STATIC_DRAW);
+                indexType = GL11.GL_UNSIGNED_INT;
+            }
+
+            indexCount = indices.length;
+            liveBytes = vertexCount * 8L * 4L + indexCount * (indexType == GL11.GL_UNSIGNED_SHORT ? 2L : 4L);
+            MeshVboStats.INSTANCE.addLive(liveBytes);
+
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+            GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
+        }
+
+        private void destroyBuffers() {
+            if (vboId != 0) {
+                GL15.glDeleteBuffers(vboId);
+                vboId = 0;
+            }
+            if (iboId != 0) {
+                GL15.glDeleteBuffers(iboId);
+                iboId = 0;
+            }
+            if (liveBytes > 0) {
+                MeshVboStats.INSTANCE.removeLive(liveBytes);
+                liveBytes = 0;
+            }
+            indexCount = 0;
+            vertexCount = 0;
+        }
     }
 
     private void logPersistentFailure(String tag, Throwable t, int err) {
@@ -207,28 +333,12 @@ public final class MeshVbo {
                 tag, glVersion, glRenderer, Integer.toHexString(err), t.toString());
     }
 
+    @Nonnull
     private static String safeGlString(int name) {
         try {
             return GL11.glGetString(name);
         } catch (Throwable ignored) {
             return "unknown";
         }
-    }
-
-    private void destroyBuffers() {
-        if (vboId != 0) {
-            GL15.glDeleteBuffers(vboId);
-            vboId = 0;
-        }
-        if (iboId != 0) {
-            GL15.glDeleteBuffers(iboId);
-            iboId = 0;
-        }
-        if (liveBytes > 0) {
-            MeshVboStats.INSTANCE.removeLive(liveBytes);
-            liveBytes = 0;
-        }
-        indexCount = 0;
-        vertexCount = 0;
     }
 }

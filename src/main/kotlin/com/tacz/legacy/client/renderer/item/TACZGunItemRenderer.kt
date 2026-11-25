@@ -8,8 +8,10 @@ import com.tacz.legacy.client.model.TACZPerspectiveAwareBakedModel
 import com.tacz.legacy.client.model.bedrock.BedrockModel
 import com.tacz.legacy.client.model.bedrock.BedrockPart
 import com.tacz.legacy.client.model.functional.BeamRenderer
+import com.tacz.legacy.client.model.mesh.Mesh
 import com.tacz.legacy.client.renderer.bloom.TACZBloomBridge
 import com.tacz.legacy.client.resource.TACZClientAssetManager
+import com.tacz.legacy.client.resource.mesh.BedrockMeshBaker
 import com.tacz.legacy.client.resource.GunDisplayInstance
 import com.tacz.legacy.client.resource.pojo.display.gun.GunDisplay
 import com.tacz.legacy.client.resource.pojo.display.gun.GunTransform
@@ -44,6 +46,9 @@ internal object TACZGunItemRenderer : TileEntityItemStackRenderer() {
     private val SLOT_MODEL = SlotModel()
     private val POSITIONING_BUFFER: FloatBuffer = BufferUtils.createFloatBuffer(16)
     private val fallbackModelCache = LinkedHashMap<ResourceLocation, BedrockModel>()
+
+    /** Baked static meshes for fallback bedrock models; null means bake failed (curved cube / empty). */
+    private val bakedMeshCache = LinkedHashMap<ResourceLocation, Mesh?>()
 
     override fun renderByItem(stack: ItemStack) {
         renderByItem(stack, 1.0f)
@@ -120,13 +125,14 @@ internal object TACZGunItemRenderer : TileEntityItemStackRenderer() {
         }
 
         val runtimeModel = displayInstance?.gunModel
-        val fallbackModel = if (runtimeModel == null) {
+        var fallbackModel: BedrockModel? = null
+        var fallbackModelLocation: ResourceLocation? = null
+        if (runtimeModel == null) {
             val modelLocation: ResourceLocation = display.modelLocation ?: return
             val modelData = TACZClientAssetManager.getModel(modelLocation) ?: return
             // 静态几何无每帧可变状态，按模型位置缓存复用，避免每渲染帧 new BedrockModel
-            fallbackModelCache.getOrPut(modelLocation) { BedrockModel(modelData.pojo, modelData.version) }
-        } else {
-            null
+            fallbackModelLocation = modelLocation
+            fallbackModel = fallbackModelCache.getOrPut(modelLocation) { BedrockModel(modelData.pojo, modelData.version) }
         }
 
         val transform: GunTransform = displayInstance?.transform ?: display.transform ?: GunTransform.getDefault()
@@ -170,9 +176,20 @@ internal object TACZGunItemRenderer : TileEntityItemStackRenderer() {
             runtimeModel.cleanCameraAnimationTransform()
         } else {
             val staticModel = fallbackModel ?: return
-            staticModel.render()
-            captureBloomIfSupported(transformType, registeredTexture, staticModel) {
-                staticModel.renderBloom()
+            // Non-first-person static scenes may draw the baked VBO mesh; first-person and
+            // any model the baker rejected (curved cubes / empty) fall back to immediate mode.
+            val bakedMesh = if (!isFirstPerson(transformType)) {
+                obtainBakedMesh(fallbackModelLocation, staticModel)
+            } else {
+                null
+            }
+            if (bakedMesh != null) {
+                bakedMesh.draw()
+            } else {
+                staticModel.render()
+                captureBloomIfSupported(transformType, registeredTexture, staticModel) {
+                    staticModel.renderBloom()
+                }
             }
         }
 
@@ -248,6 +265,31 @@ internal object TACZGunItemRenderer : TileEntityItemStackRenderer() {
         POSITIONING_BUFFER.rewind()
         GL11.glMultMatrix(POSITIONING_BUFFER)
         GlStateManager.translate(0f, -1.5f, 0f)
+    }
+
+    private fun isFirstPerson(transformType: ItemCameraTransforms.TransformType): Boolean =
+        transformType == ItemCameraTransforms.TransformType.FIRST_PERSON_LEFT_HAND ||
+            transformType == ItemCameraTransforms.TransformType.FIRST_PERSON_RIGHT_HAND
+
+    private fun obtainBakedMesh(modelLocation: ResourceLocation?, model: BedrockModel): Mesh? {
+        if (modelLocation == null) return null
+        bakedMeshCache[modelLocation]?.let { return it }
+        val data = BedrockMeshBaker.bake(model)
+        val mesh = data?.let {
+            Mesh(it, "bedrock:$modelLocation").apply {
+                // Bedrock models are already in MC Y-down space; keep the default 16-unit scale.
+                setFlipY(false)
+                setScale(16.0F)
+            }
+        }
+        bakedMeshCache[modelLocation] = mesh
+        return mesh
+    }
+
+    /** Release baked VBO/IBO buffers on gun-pack reload or client stop. Render-thread only. */
+    fun releaseBakedMeshes() {
+        for (mesh in bakedMeshCache.values) mesh?.destroyVbo()
+        bakedMeshCache.clear()
     }
 
     private fun captureBloomIfSupported(

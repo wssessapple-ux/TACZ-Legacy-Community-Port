@@ -74,6 +74,11 @@ public class BedrockCubeBox implements BedrockCube {
         this.polygons[5] = new BedrockPolygon(new BedrockVertex[]{vertex5, vertex6, vertex7, vertex8}, p4, p6, p5, p7, texWidth, texHeight, mirror, EnumFacing.SOUTH);
     }
 
+    /** Exposed for offline mesh baking; polygons are already laid out in local 16-unit space. */
+    public BedrockPolygon[] getPolygons() {
+        return polygons;
+    }
+
     @Override
     public void compile(BufferBuilder buffer) {
         for (BedrockPolygon polygon : this.polygons) {

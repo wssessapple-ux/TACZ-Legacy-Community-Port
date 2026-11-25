@@ -70,6 +70,11 @@ public class BedrockCubePerFace implements BedrockCube {
         return new BedrockPolygon(positionsIn, u1, v1, u2, v2, texWidth, texHeight, false, direction);
     }
 
+    /** Exposed for offline mesh baking; polygons are already laid out in local 16-unit space. */
+    public BedrockPolygon[] getPolygons() {
+        return polygons;
+    }
+
     @Override
     public void compile(BufferBuilder buffer) {
         for (BedrockPolygon polygon : this.polygons) {

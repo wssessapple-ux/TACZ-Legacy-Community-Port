@@ -15,6 +15,7 @@ import com.tacz.legacy.client.sound.GunPackSoundResourcePack
 import com.tacz.legacy.client.resource.index.ClientAttachmentIndex
 import com.tacz.legacy.client.resource.gltf.GltfAnimationData
 import com.tacz.legacy.client.renderer.gltf.GltfMeshRenderer
+import com.tacz.legacy.client.renderer.item.TACZGunItemRenderer
 import com.tacz.legacy.client.resource.gltf.GltfAnimationParser
 import com.tacz.legacy.client.resource.gltf.GltfMeshParser
 import com.tacz.legacy.client.resource.mesh.StaticMeshData
@@ -395,6 +396,7 @@ internal object TACZClientAssetManager {
         PlayerAnimatorCompat.clear()
         // Drop GPU-side mesh caches (VBO/IBO) together with the parsed snapshot.
         GltfMeshRenderer.releaseAll()
+        TACZGunItemRenderer.releaseBakedMeshes()
     }
 
     private fun buildAmmoShellRenderAsset(ammoId: ResourceLocation): ShellRenderAsset? {

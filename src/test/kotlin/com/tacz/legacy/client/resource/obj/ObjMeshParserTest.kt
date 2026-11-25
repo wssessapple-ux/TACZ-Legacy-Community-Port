@@ -66,6 +66,37 @@ class ObjMeshParserTest {
     }
 
     @Test
+    fun `faces split by usemtl into material groups`() {
+        val obj = """
+            v 0 0 0
+            v 1 0 0
+            v 1 1 0
+            v 0 1 0
+            vt 0 0
+            vt 1 0
+            vt 1 1
+            vt 0 1
+            usemtl wood
+            f 1/1 2/2 3/3
+            usemtl metal
+            f 1/1 2/2 3/3 4/4
+        """.trimIndent()
+
+        val mesh: StaticMeshData = ObjMeshParser.parse(obj)
+
+        assertEquals(2, mesh.groupCount)
+        assertEquals("wood", mesh.groups[0].materialKey)
+        assertEquals("metal", mesh.groups[1].materialKey)
+
+        // wood: one triangle = 3 indices, 3 vertices
+        assertEquals(3, mesh.groups[0].indices.size)
+        assertEquals(3, mesh.groups[0].vertexCount)
+        // metal: one quad fanned into two triangles = 6 indices, 4 vertices
+        assertEquals(6, mesh.groups[1].indices.size)
+        assertEquals(4, mesh.groups[1].vertexCount)
+    }
+
+    @Test
     fun `face without texture coordinates falls back to zero uv`() {
         val obj = """
             v 0 0 0

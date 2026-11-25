@@ -1,10 +1,13 @@
 package com.tacz.legacy.client.resource.obj;
 
+import com.tacz.legacy.client.resource.mesh.MeshGroup;
 import com.tacz.legacy.client.resource.mesh.StaticMeshData;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -20,10 +23,11 @@ import java.util.Map;
  *   <li>polygon faces triangulated by fan split ({@code 0, k, k+1})</li>
  *   <li>missing normals are computed per-face (flat) by cross product</li>
  *   <li>missing texture coordinates default to (0, 0)</li>
+ *   <li>{@code usemtl} directives split faces into material groups; the material
+ *       name is carried as {@link MeshGroup#getMaterialKey()}</li>
  * </ul>
  * Ignored: {@code o} / {@code g} groups, smoothing groups {@code s},
- * {@code mtllib} / {@code usemtl} materials, lines and points. Multi-material
- * groups and subdivision are not handled.
+ * {@code mtllib} material libraries, lines and points.
  */
 public final class ObjMeshParser {
 
@@ -35,11 +39,9 @@ public final class ObjMeshParser {
         List<float[]> uvs = new ArrayList<>();
         List<float[]> normals = new ArrayList<>();
 
-        List<Float> outPos = new ArrayList<>();
-        List<Float> outUv = new ArrayList<>();
-        List<Float> outNormal = new ArrayList<>();
-        List<Integer> outIndices = new ArrayList<>();
-        Map<Long, Integer> vertexMap = new HashMap<>();
+        Map<String, GroupBuilder> groups = new LinkedHashMap<>();
+        GroupBuilder current = new GroupBuilder(null);
+        groups.put(null, current);
 
         for (String rawLine : objText.split("\\r?\\n")) {
             String line = rawLine.trim();
@@ -66,31 +68,57 @@ public final class ObjMeshParser {
                             Float.parseFloat(parts[2]),
                             Float.parseFloat(parts[3])});
                     break;
+                case "usemtl": {
+                    String name = parts.length > 1 ? parts[1].trim() : "";
+                    String key = name.isEmpty() ? null : name;
+                    current = groups.computeIfAbsent(key, GroupBuilder::new);
+                    break;
+                }
                 case "f":
-                    addFace(parts, positions, uvs, normals, vertexMap,
-                            outPos, outUv, outNormal, outIndices);
+                    addFace(parts, positions, uvs, normals, current);
                     break;
                 default:
-                    // o, g, s, mtllib, usemtl, l, bevel, curv and other directives are ignored.
+                    // o, g, s, mtllib, l, bevel, curv and other directives are ignored.
                     break;
             }
         }
 
-        if (normals.isEmpty()) {
-            fillFlatNormals(outPos, outNormal, outIndices);
+        boolean hasExplicitNormals = !normals.isEmpty();
+        List<MeshGroup> result = new ArrayList<>();
+        for (GroupBuilder group : groups.values()) {
+            if (group.outIndices.isEmpty()) {
+                continue;
+            }
+            if (!hasExplicitNormals) {
+                fillFlatNormals(group.outPos, group.outNormal, group.outIndices);
+            }
+            result.add(new MeshGroup(
+                    group.key,
+                    toFloatArray(group.outPos, 3),
+                    toFloatArray(group.outUv, 2),
+                    toFloatArray(group.outNormal, 3),
+                    toIntArray(group.outIndices)));
         }
+        return new StaticMeshData(result);
+    }
 
-        return new StaticMeshData(
-                toFloatArray(outPos, 3),
-                toFloatArray(outUv, 2),
-                toFloatArray(outNormal, 3),
-                toIntArray(outIndices));
+    /** Per-material-group accumulated vertices, indices and local vertex de-duplication. */
+    private static final class GroupBuilder {
+        @Nullable
+        private final String key;
+        private final List<Float> outPos = new ArrayList<>();
+        private final List<Float> outUv = new ArrayList<>();
+        private final List<Float> outNormal = new ArrayList<>();
+        private final List<Integer> outIndices = new ArrayList<>();
+        private final Map<Long, Integer> vertexMap = new HashMap<>();
+
+        private GroupBuilder(@Nullable String key) {
+            this.key = key;
+        }
     }
 
     private static void addFace(String[] parts, List<float[]> positions, List<float[]> uvs,
-                                List<float[]> normals, Map<Long, Integer> vertexMap,
-                                List<Float> outPos, List<Float> outUv, List<Float> outNormal,
-                                List<Integer> outIndices) {
+                                List<float[]> normals, GroupBuilder group) {
         int faceCount = parts.length - 1;
         if (faceCount < 3) {
             return;
@@ -110,42 +138,41 @@ public final class ObjMeshParser {
 
         // Fan triangulation: (0, 1, 2), (0, 2, 3), ...
         for (int k = 1; k + 1 < faceCount; k++) {
-            outIndices.add(mergeVertex(refs[0], positions, uvs, normals, vertexMap, outPos, outUv, outNormal));
-            outIndices.add(mergeVertex(refs[k], positions, uvs, normals, vertexMap, outPos, outUv, outNormal));
-            outIndices.add(mergeVertex(refs[k + 1], positions, uvs, normals, vertexMap, outPos, outUv, outNormal));
+            group.outIndices.add(mergeVertex(refs[0], positions, uvs, normals, group));
+            group.outIndices.add(mergeVertex(refs[k], positions, uvs, normals, group));
+            group.outIndices.add(mergeVertex(refs[k + 1], positions, uvs, normals, group));
         }
     }
 
     private static int mergeVertex(int[] ref, List<float[]> positions, List<float[]> uvs,
-                                   List<float[]> normals, Map<Long, Integer> vertexMap,
-                                   List<Float> outPos, List<Float> outUv, List<Float> outNormal) {
+                                   List<float[]> normals, GroupBuilder group) {
         int pi = ref[0];
         int ti = ref[1];
         int ni = ref[2];
 
         // ti / ni are -1 when absent; offset by one so the key stays non-negative.
         long key = ((long) pi << 40) | ((long) (ti + 1) << 20) | (ni + 1);
-        Integer existing = vertexMap.get(key);
+        Integer existing = group.vertexMap.get(key);
         if (existing != null) {
             return existing;
         }
 
         float[] p = positions.get(pi);
-        outPos.add(p[0]);
-        outPos.add(p[1]);
-        outPos.add(p[2]);
+        group.outPos.add(p[0]);
+        group.outPos.add(p[1]);
+        group.outPos.add(p[2]);
 
         float[] uv = ti >= 0 && ti < uvs.size() ? uvs.get(ti) : new float[]{0.0F, 0.0F};
-        outUv.add(uv[0]);
-        outUv.add(uv[1]);
+        group.outUv.add(uv[0]);
+        group.outUv.add(uv[1]);
 
         float[] n = ni >= 0 && ni < normals.size() ? normals.get(ni) : new float[]{0.0F, 1.0F, 0.0F};
-        outNormal.add(n[0]);
-        outNormal.add(n[1]);
-        outNormal.add(n[2]);
+        group.outNormal.add(n[0]);
+        group.outNormal.add(n[1]);
+        group.outNormal.add(n[2]);
 
-        int index = outPos.size() / 3 - 1;
-        vertexMap.put(key, index);
+        int index = group.outPos.size() / 3 - 1;
+        group.vertexMap.put(key, index);
         return index;
     }
 

@@ -1,11 +1,16 @@
 package com.tacz.legacy.client.model.mesh;
 
+import com.tacz.legacy.client.resource.mesh.MeshGroup;
 import com.tacz.legacy.client.resource.mesh.StaticMeshData;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
+import net.minecraft.util.ResourceLocation;
 import org.lwjgl.opengl.GL11;
+
+import javax.annotation.Nullable;
 
 /**
  * Render wrapper around a decoded {@link StaticMeshData}. Shared by the glTF and
@@ -20,6 +25,8 @@ public class Mesh {
     private final StaticMeshData data;
     private final MeshVbo vbo = new MeshVbo();
     private final String tag;
+    @Nullable
+    private MaterialResolver materialResolver;
     private float scale = 16.0F;
     private boolean flipY = true;
 
@@ -34,6 +41,15 @@ public class Mesh {
 
     public StaticMeshData getData() {
         return data;
+    }
+
+    /**
+     * Inject the resolver that maps a group's material key to a texture. A
+     * {@code null} resolver (the default) leaves every group on the texture the
+     * caller already bound.
+     */
+    public void setMaterialResolver(@Nullable MaterialResolver resolver) {
+        this.materialResolver = resolver;
     }
 
     public void setScale(float scale) {
@@ -63,11 +79,26 @@ public class Mesh {
             return;
         }
         if (vbo.ensureUploaded(data, scale, flipY, tag)) {
-            vbo.draw();
+            vbo.draw(this::bindGroupTexture);
             MeshVboStats.INSTANCE.recordHit();
         } else {
             drawImmediate();
             MeshVboStats.INSTANCE.recordFallback();
+        }
+    }
+
+    /** Per-group texture bind routed through the optional resolver; no-op when there is no override. */
+    private void bindGroupTexture(MeshGroup group) {
+        if (materialResolver == null) {
+            return;
+        }
+        String key = group.getMaterialKey();
+        if (key == null) {
+            return;
+        }
+        ResourceLocation texture = materialResolver.resolve(key);
+        if (texture != null) {
+            Minecraft.getMinecraft().getTextureManager().bindTexture(texture);
         }
     }
 
@@ -84,18 +115,33 @@ public class Mesh {
     private void drawImmediate() {
         Tessellator tessellator = Tessellator.getInstance();
         BufferBuilder buffer = tessellator.getBuffer();
-        buffer.begin(GL11.GL_TRIANGLES, DefaultVertexFormats.POSITION_TEX_NORMAL);
-        compile(buffer);
-        tessellator.draw();
+        for (MeshGroup group : data.getGroups()) {
+            if (group.isEmpty()) {
+                continue;
+            }
+            bindGroupTexture(group);
+            buffer.begin(GL11.GL_TRIANGLES, DefaultVertexFormats.POSITION_TEX_NORMAL);
+            compileGroup(buffer, group);
+            tessellator.draw();
+        }
     }
 
-    /** Immediate-mode fallback vertex feed, using the shared transform. */
+    /** Immediate-mode fallback vertex feed for every group, using the shared transform. */
     public void compile(BufferBuilder buffer) {
-        float[] positions = data.getPositions();
-        float[] uvs = data.getUvs();
-        float[] normals = data.getNormals();
-        int[] indices = data.getIndices();
+        for (MeshGroup group : data.getGroups()) {
+            if (!group.isEmpty()) {
+                compileGroup(buffer, group);
+            }
+        }
+    }
+
+    /** Feed one group's vertices into the immediate-mode batch, using the shared transform. */
+    private void compileGroup(BufferBuilder buffer, MeshGroup group) {
         float[] out = new float[6];
+        float[] positions = group.getPositions();
+        float[] uvs = group.getUvs();
+        float[] normals = group.getNormals();
+        int[] indices = group.getIndices();
 
         for (int i = 0; i < indices.length; i++) {
             int vertex = indices[i];
