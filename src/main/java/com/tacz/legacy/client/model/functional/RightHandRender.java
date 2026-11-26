@@ -40,11 +40,11 @@ public class RightHandRender implements IFunctionalRenderer {
         // Flip Z 180° to correct orientation in bedrock model space
         GlStateManager.rotate(180f, 0f, 0f, 1f);
 
-        // Bind player skin and render right arm
-        mc.getTextureManager().bindTexture(player.getLocationSkin());
         Render<?> entityRenderer = mc.getRenderManager().getEntityRenderObject(player);
         RenderPlayer renderer = entityRenderer instanceof RenderPlayer ? (RenderPlayer) entityRenderer : null;
         if (renderer != null) {
+            // Bind player skin and render right arm
+            mc.getTextureManager().bindTexture(player.getLocationSkin());
             renderer.renderRightArm(player);
         }
 

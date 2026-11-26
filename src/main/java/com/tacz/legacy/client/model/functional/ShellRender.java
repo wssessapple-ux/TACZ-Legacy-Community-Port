@@ -67,6 +67,7 @@ public class ShellRender implements IFunctionalRenderer {
         ResourceLocation gunId = iGun.getGunId(currentGunItem);
         GunCombatData gunData = GunDataAccessor.getGunData(gunId);
         if (gunData == null || gunData.getAmmoId() == null) {
+            shellQueue.clear();
             return;
         }
         ShellEjection shellEjection = bedrockGunModel.getShellEjection();
@@ -76,6 +77,7 @@ public class ShellRender implements IFunctionalRenderer {
         }
         TACZClientAssetManager.ShellRenderAsset shellAsset = TACZClientAssetManager.INSTANCE.getAmmoShellRenderAsset(gunData.getAmmoId());
         if (shellAsset == null) {
+            shellQueue.clear();
             return;
         }
         long lifeTime = Math.max((long) (shellEjection.getLivingTime() * 1000.0f), 0L);
