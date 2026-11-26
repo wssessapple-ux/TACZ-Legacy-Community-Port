@@ -31,6 +31,8 @@ public class ShellRender implements IFunctionalRenderer {
     private final ConcurrentLinkedDeque<Data> shellQueue = new ConcurrentLinkedDeque<>();
     private final BedrockGunModel bedrockGunModel;
     private final int slotIndex;
+    /** Reusable GL matrix buffer; render thread only, avoids a per-shell FloatBuffer allocation every frame. */
+    private final FloatBuffer matrixBuffer = BufferUtils.createFloatBuffer(16);
 
     public ShellRender(BedrockGunModel bedrockGunModel, int slotIndex) {
         this.bedrockGunModel = bedrockGunModel;
@@ -154,18 +156,18 @@ public class ShellRender implements IFunctionalRenderer {
     }
 
     private Matrix4f captureCurrentModelView() {
-        FloatBuffer buffer = BufferUtils.createFloatBuffer(16);
-        GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, buffer);
-        buffer.rewind();
-        return new Matrix4f().set(buffer);
+        matrixBuffer.clear();
+        GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, matrixBuffer);
+        matrixBuffer.rewind();
+        return new Matrix4f().set(matrixBuffer);
     }
 
     private void loadModelView(Matrix4f modelView) {
-        FloatBuffer buffer = BufferUtils.createFloatBuffer(16);
-        modelView.get(buffer);
-        buffer.rewind();
+        matrixBuffer.clear();
+        modelView.get(matrixBuffer);
+        matrixBuffer.rewind();
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
-        GL11.glLoadMatrix(buffer);
+        GL11.glLoadMatrix(matrixBuffer);
     }
 
     private void logFocusedSmokeVisible(ResourceLocation gunId, Data data, ShellEjection shellEjection, long lifeTime) {

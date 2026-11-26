@@ -159,7 +159,6 @@ internal object FirstPersonRenderGunEvent {
     @JvmStatic
     fun onShoot() {
         shootTimeStamp = System.currentTimeMillis()
-        MuzzleFlashRender.onShoot()
     }
 
     @JvmStatic
@@ -549,6 +548,7 @@ internal object FirstPersonRenderGunEvent {
                 if (muzzleFlashRender != null) {
                     MuzzleFlashRender.isSelf = true
                     ShellRender.isSelf = true
+                    muzzleFlashRender.syncShotStamp(shootTimeStamp)
                     val gunDisplay = TACZClientAssetManager.getGunDisplay(prepared.displayId)
                     muzzleFlashRender.setActiveMuzzleFlash(gunDisplay?.getMuzzleFlash())
                 }

@@ -26,10 +26,17 @@ public class MuzzleFlashRender implements IFunctionalRenderer {
     private static final long TIME_RANGE = 50;
     private static final String FOCUSED_SMOKE_PROPERTY = "tacz.focusedSmoke";
 
+    /**
+     * Frame-level context flag: whether this first-person pass belongs to the local player.
+     * Set around the own-gun render in {@code FirstPersonRenderGunEvent}; third-person and
+     * other players leave it false so their muzzle flash is not drawn. Global by design.
+     */
     public static boolean isSelf = false;
-    private static long shootTimeStamp = -1;
-    private static long lastVisibleLogShootTimestamp = Long.MIN_VALUE;
-    private static float muzzleFlashRandomRotate = 0;
+
+    /** Per-instance shot state: which global shot stamp this instance already reacted to, its random Z roll, and the last logged shot. */
+    private long instanceShotStamp = -1L;
+    private float randomRotate = 0f;
+    private long lastVisibleLogShootTimestamp = Long.MIN_VALUE;
 
     /** Set by the renderer before model.render() each frame. */
     @Nullable
@@ -41,9 +48,16 @@ public class MuzzleFlashRender implements IFunctionalRenderer {
         this.bedrockGunModel = bedrockGunModel;
     }
 
-    public static void onShoot() {
-        shootTimeStamp = System.currentTimeMillis();
-        muzzleFlashRandomRotate = (float) (Math.random() * 360);
+    /**
+     * Feed the global local-player shot timestamp into this instance. The random roll is
+     * re-rolled only when a new shot arrives, so each gun model keeps its own flash state
+     * instead of sharing one static timestamp/rotation across instances.
+     */
+    public void syncShotStamp(long globalShotStamp) {
+        if (globalShotStamp != instanceShotStamp) {
+            instanceShotStamp = globalShotStamp;
+            randomRotate = (float) (Math.random() * 360);
+        }
     }
 
     public void setActiveMuzzleFlash(@Nullable MuzzleFlash muzzleFlash) {
@@ -55,7 +69,7 @@ public class MuzzleFlashRender implements IFunctionalRenderer {
         if (!isSelf) {
             return;
         }
-        long time = System.currentTimeMillis() - shootTimeStamp;
+        long time = System.currentTimeMillis() - instanceShotStamp;
         if (time > TIME_RANGE) {
             return;
         }
@@ -72,8 +86,8 @@ public class MuzzleFlashRender implements IFunctionalRenderer {
             return;
         }
 
-        if (isFocusedSmokeEnabled() && shootTimeStamp > 0L && lastVisibleLogShootTimestamp != shootTimeStamp) {
-            lastVisibleLogShootTimestamp = shootTimeStamp;
+        if (isFocusedSmokeEnabled() && instanceShotStamp > 0L && lastVisibleLogShootTimestamp != instanceShotStamp) {
+            lastVisibleLogShootTimestamp = instanceShotStamp;
             TACZLegacy.logger.info(
                     "[FocusedSmoke] MUZZLE_FLASH_VISIBLE texture={} registered={} ageMs={} scale={}",
                     texture,
@@ -103,7 +117,7 @@ public class MuzzleFlashRender implements IFunctionalRenderer {
                         GlStateManager.DestFactor.ZERO
                 );
                 GlStateManager.scale(scale, scale, scale);
-                GlStateManager.rotate(muzzleFlashRandomRotate, 0f, 0f, 1f);
+                GlStateManager.rotate(randomRotate, 0f, 0f, 1f);
                 GlStateManager.translate(0f, -1f, 0f);
                 // Full brightness for the flash
                 OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240, 240);
@@ -118,7 +132,7 @@ public class MuzzleFlashRender implements IFunctionalRenderer {
                 GlStateManager.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
                 float glowScale = scale / 2f;
                 GlStateManager.scale(glowScale, glowScale, glowScale);
-                GlStateManager.rotate(muzzleFlashRandomRotate, 0f, 0f, 1f);
+                GlStateManager.rotate(randomRotate, 0f, 0f, 1f);
                 GlStateManager.translate(0f, -0.9f, 0f);
                 OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240, 240);
                 MUZZLE_FLASH_MODEL.render();
