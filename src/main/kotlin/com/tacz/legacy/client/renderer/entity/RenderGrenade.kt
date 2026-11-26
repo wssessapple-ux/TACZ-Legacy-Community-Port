@@ -20,11 +20,11 @@ import net.minecraftforge.fml.relauncher.SideOnly
 import java.io.StringReader
 import java.nio.charset.StandardCharsets
 import kotlin.math.atan2
-import kotlin.math.sqrt
+import kotlin.math.hypot
 
 /**
- * 破片手雷实体渲染器。内置 bedrock 模型（P0 圆柱弹体），随飞行方向朝向，
- * 飞行中绕前向轴滚动。
+ * 破片手雷实体渲染器。内置 bedrock 椭球卵形模型，随飞行方向朝向，
+ * 飞行中绕前向轴滚动；趴住静止后停转并冻结姿态。
  */
 @SideOnly(Side.CLIENT)
 internal class RenderGrenade(renderManager: RenderManager) : Render<EntityGrenade>(renderManager) {
@@ -40,6 +40,8 @@ internal class RenderGrenade(renderManager: RenderManager) : Render<EntityGrenad
         private var model: BedrockModel? = null
         private var modelResolved = false
         private const val ROLL_SPEED = 12.0
+        /** 低于该速度视为趴住静止：不再追 motion 朝向、不再翻滚。 */
+        private const val REST_THRESHOLD = 0.05f
     }
 
     override fun doRender(
@@ -55,21 +57,27 @@ internal class RenderGrenade(renderManager: RenderManager) : Render<EntityGrenad
         val mx = entity.motionX.toFloat()
         val my = entity.motionY.toFloat()
         val mz = entity.motionZ.toFloat()
-        val hDist = sqrt(mx * mx + mz * mz)
+        val hDist = hypot(mx, mz)
+        val speed = hypot(hDist, Math.abs(my))
+        val moving = speed > REST_THRESHOLD
 
         GlStateManager.pushMatrix()
         GlStateManager.translate(x, y, z)
 
-        if (hDist > 1.0E-4f) {
+        // 仅在运动中按 motion 对齐朝向；静止后保持上一帧姿态，避免低速方向角抖动。
+        if (moving && hDist > 1.0E-4f) {
             val yaw = Math.toDegrees(atan2(mx, mz).toDouble()).toFloat()
             val pitch = -Math.toDegrees(atan2(my, hDist).toDouble()).toFloat()
             GlStateManager.rotate(yaw, 0f, 1f, 0f)
             GlStateManager.rotate(pitch, 1f, 0f, 0f)
         }
 
-        // 飞行中绕前向轴滚动（frag 出手翻滚）。
-        val tickTime = entity.ticksExisted + partialTicks
-        GlStateManager.rotate((tickTime * ROLL_SPEED).toFloat(), 1f, 0f, 0f)
+        // 翻滚角速度随速度缩放；趴住静止后停转。
+        if (moving) {
+            val speedFactor = (speed / 1.0f).coerceIn(0f, 1f)
+            val tickTime = entity.ticksExisted + partialTicks
+            GlStateManager.rotate((tickTime * ROLL_SPEED * speedFactor).toFloat(), 1f, 0f, 0f)
+        }
 
         GlStateManager.enableLighting()
         GlStateManager.enableRescaleNormal()
