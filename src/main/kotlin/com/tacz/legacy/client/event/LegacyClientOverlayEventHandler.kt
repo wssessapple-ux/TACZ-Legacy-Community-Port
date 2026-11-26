@@ -108,6 +108,11 @@ internal object LegacyClientOverlayEventHandler {
         if (event.type != RenderGameOverlayEvent.ElementType.TEXT) {
             return
         }
+        // VBO 统计是开发者遥测：必须配置开关打开，且仅在 F3 调试界面可见，普通玩家默认看不到。
+        val mc = Minecraft.getMinecraft()
+        if (!LegacyConfigManager.client.vboDebugOverlayEnable || !mc.gameSettings.showDebugInfo) {
+            return
+        }
         MeshVboStats.debugLines().forEach { event.right.add(it) }
     }
 

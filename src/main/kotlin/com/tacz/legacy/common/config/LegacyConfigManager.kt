@@ -61,6 +61,7 @@ internal data class ClientConfigValues(
     var zoomSensitivityBaseMultiplier: Double = 1.0,
     var enableOcularInflate: Boolean = true,
     var ocularInflate: Double = 0.0005,
+    var vboDebugOverlayEnable: Boolean = false,
 )
 
 internal data class ServerConfigValues(
@@ -330,6 +331,10 @@ internal object LegacyConfigManager {
                 "OcularInflate", "render", 0.0005f, 0.0f, Float.MAX_VALUE,
                 "Extra inflate added to ocular cubes in Bedrock model units. Requires EnableOcularInflate. Reload client resources after changing this setting."
             ).toDouble()
+            client.vboDebugOverlayEnable = cfg.getBoolean(
+                "VboDebugOverlayEnable", "render", false,
+                "Show the VBO cache stats (hit/fallback/rebuild/VRAM) in the debug overlay. Only visible while the F3 debug screen is open. Off by default; for developers only."
+            )
         } catch (t: Throwable) {
             TACZLegacy.logger.warn("Failed to load ${side.name.lowercase()} config, using defaults.", t)
         } finally {
