@@ -57,7 +57,7 @@ internal object DefaultGunPackExporter {
     }
 
     private fun exportRegisteredResources(rootDirectory: File, overwrite: Boolean): Unit {
-        ResourceManager.EXTRA_ENTRIES.forEach { entry ->
+        ResourceManager.snapshot().forEach { entry ->
             val targetDirectory = File(rootDirectory, entry.extraDirName)
             if (targetDirectory.exists() && !overwrite) {
                 return@forEach

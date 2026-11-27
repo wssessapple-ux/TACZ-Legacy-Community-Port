@@ -23,9 +23,7 @@ public data class Modifier(
     val function: String? = null,
 )
 
-public class CacheValue<T>(public var value: T)
-
-public abstract class JsonProperty<T>(private var value: T?) {
+internal abstract class JsonProperty<T>(private var value: T?) {
     protected val componentList: MutableList<ITextComponent> = mutableListOf()
 
     public fun getValue(): T? = value
@@ -37,18 +35,6 @@ public abstract class JsonProperty<T>(private var value: T?) {
     public fun getComponents(): List<ITextComponent> = componentList.toList()
 
     public abstract fun initComponents()
-}
-
-public interface IAttachmentModifier<T, K> {
-    public fun getId(): String
-
-    public fun getOptionalFields(): String = ""
-
-    public fun readJson(json: String): JsonProperty<T>
-
-    public fun initCache(defaultValue: K): CacheValue<K>
-
-    public fun eval(modifiedValues: List<T>, cache: CacheValue<K>): Unit
 }
 
 public class ParameterizedCache<T> private constructor(
@@ -258,8 +244,7 @@ public object ModifierEvaluator {
         }
     }
 
-    @JvmStatic
-    public fun functionEval(value: Double, defaultValue: Double, script: String): Double {
+    internal fun functionEval(value: Double, defaultValue: Double, script: String): Double {
         // 上游在编译期就做了小写化（AttachmentScriptManager.compile → script.toLowerCase）
         val normalizedScript = script.lowercase(Locale.ENGLISH)
         val closure = compile(normalizedScript) ?: return value
