@@ -121,6 +121,33 @@ class S2CMessageSerializationTest {
     }
 
     @Test
+    fun `ServerMessageGunKill round-trips multiKillCount`() {
+        val msg = ServerMessageGunKill(
+            bulletId = 1,
+            killedEntityId = 2,
+            attackerId = 3,
+            gunId = ResourceLocation("tacz", "ak47"),
+            gunDisplayId = DefaultAssets.DEFAULT_GUN_DISPLAY_ID,
+            baseDamage = 5f,
+            isHeadShot = true,
+            headShotMultiplier = 2f,
+            attackerName = "Steve",
+            killedName = "Alex",
+            distance = 12f,
+            category = KillFeedCategory.MULTI_KILL,
+            multiKillCount = 3,
+        )
+        val buf = Unpooled.buffer()
+        msg.toBytes(buf)
+
+        val deserialized = ServerMessageGunKill()
+        deserialized.fromBytes(buf)
+        val field = ServerMessageGunKill::class.java.getDeclaredField("multiKillCount")
+        field.isAccessible = true
+        assertEquals(3, field.getInt(deserialized))
+    }
+
+    @Test
     fun `ServerMessageSound convenience constructor sets default displayId`() {
         val gunId = ResourceLocation("tacz", "m4a1")
         val msg = ServerMessageSound(1, gunId, "shoot", 1.0f, 1.0f, 64)

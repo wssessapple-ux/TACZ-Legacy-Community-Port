@@ -15,6 +15,7 @@ import com.tacz.legacy.common.config.HeadShotAabbConfigRead
 import com.tacz.legacy.common.config.LegacyConfigManager
 import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.event.KillFeedCategory
+import com.tacz.legacy.common.network.message.event.KillStreakTracker
 import com.tacz.legacy.common.network.message.event.ServerMessageGunHurt
 import com.tacz.legacy.common.network.message.event.ServerMessageGunKill
 import io.netty.buffer.ByteBuf
@@ -883,6 +884,14 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         }
         val attacker = thrower as? EntityLivingBase
         if (target is EntityLivingBase && !target.isEntityAlive) {
+            val attackerPlayer = attacker as? net.minecraft.entity.player.EntityPlayer
+            val attackerKey = attackerPlayer?.name
+            val windowMs = (LegacyConfigManager.server.multiKillWindowSecond * 1000.0).toLong()
+            val multiKillCount = if (attackerKey != null) {
+                KillStreakTracker.record(attackerKey, System.currentTimeMillis(), windowMs)
+            } else {
+                1
+            }
             MinecraftForge.EVENT_BUS.post(
                 EntityKillByGunEvent(
                     bullet = this,
@@ -894,16 +903,22 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
                     isHeadShot = feedback.headShot,
                     headShotMultiplier = feedback.headShotMultiplier,
                     logicalSide = Side.SERVER,
+                    multiKillCount = multiKillCount,
                 ),
             )
-            val attackerIsPlayer = attacker is net.minecraft.entity.player.EntityPlayer
+            val attackerIsPlayer = attackerPlayer != null
             val killedIsPlayer = target is net.minecraft.entity.player.EntityPlayer
-            val category = when {
+            val baseCategory = when {
                 attackerIsPlayer && killedIsPlayer -> KillFeedCategory.PVP
                 attackerIsPlayer && !killedIsPlayer ->
                     if (BossKillConfigRead.isBoss(target)) KillFeedCategory.BOSS_KILL else KillFeedCategory.PLAYER_KILLS_MOB
                 !attackerIsPlayer && killedIsPlayer -> KillFeedCategory.MOB_KILLS_PLAYER
                 else -> KillFeedCategory.OTHER
+            }
+            val category = if (baseCategory == KillFeedCategory.PVP && multiKillCount >= 2) {
+                KillFeedCategory.MULTI_KILL
+            } else {
+                baseCategory
             }
             val attackerName = resolveEntityName(attacker)
             val killedName = resolveEntityName(target)
@@ -922,6 +937,7 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
                     killedName = killedName,
                     distance = killDistance,
                     category = category,
+                    multiKillCount = multiKillCount,
                 ),
                 world.provider.dimension,
             )

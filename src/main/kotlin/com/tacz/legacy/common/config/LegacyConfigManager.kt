@@ -87,6 +87,7 @@ internal data class ServerConfigValues(
     var enableCrawl: Boolean = true,
     var chunkLoaderLimitPerPlayer: Int = 3,
     var bossKillEntities: List<String> = emptyList(),
+    var multiKillWindowSecond: Double = 5.0,
 )
 
 internal enum class ServerToggleKey(
@@ -413,6 +414,10 @@ internal object LegacyConfigManager {
                 "BossKillEntities", "misc", emptyArray(),
                 "Entities treated as bosses / elites for the kill feed boss category. Format: modid:entity"
             ).toList()
+            server.multiKillWindowSecond = cfg.getFloat(
+                "MultiKillWindowSecond", "misc", 5.0f, 1.0f, 60.0f,
+                "Time window (seconds) in which consecutive kills by the same attacker count as a multi-kill."
+            ).toDouble()
             server.enableTableFilter = cfg.getBoolean(
                 "EnableDefaultGunSmithTableFilter", "misc", true,
                 "Enable the recipe limit of the default gunsmith table or not."

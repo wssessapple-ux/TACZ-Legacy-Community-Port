@@ -13,6 +13,7 @@ internal object KillFeedState {
         val gunName: String,
         val distance: Float,
         val headShot: Boolean,
+        val multiKillCount: Int,
         val timestamp: Long,
     )
 
@@ -28,12 +29,13 @@ internal object KillFeedState {
         gunName: String,
         distance: Float,
         headShot: Boolean,
+        multiKillCount: Int = 1,
         now: Long = System.currentTimeMillis(),
     ) {
         if (attacker.isBlank() || killed.isBlank()) {
             return
         }
-        entries.addFirst(Entry(attacker, killed, gunName, distance, headShot, now))
+        entries.addFirst(Entry(attacker, killed, gunName, distance, headShot, multiKillCount, now))
         while (entries.size > MAX_ENTRIES) {
             entries.removeLast()
         }
@@ -49,7 +51,7 @@ internal object KillFeedState {
         return alive.take(maxEntries).map {
             val remain = durationMs - (now - it.timestamp)
             val alpha = if (remain >= fadeMs) 1f else (remain.toFloat() / fadeMs).coerceIn(0f, 1f)
-            FeedEntry(it.attacker, it.killed, it.gunName, it.distance, it.headShot, alpha)
+            FeedEntry(it.attacker, it.killed, it.gunName, it.distance, it.headShot, it.multiKillCount, alpha)
         }
     }
 
@@ -64,6 +66,7 @@ internal object KillFeedState {
         val gunName: String,
         val distance: Float,
         val headShot: Boolean,
+        val multiKillCount: Int,
         val alpha: Float,
     )
 }

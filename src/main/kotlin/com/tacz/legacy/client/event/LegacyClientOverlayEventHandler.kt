@@ -526,6 +526,12 @@ internal object LegacyClientOverlayEventHandler {
             TACZAsciiFontHelper.drawStringWithShadow(font, arrow, cx, y, arrowColor)
             cx += TACZAsciiFontHelper.getStringWidth(font, arrow)
             TACZAsciiFontHelper.drawStringWithShadow(font, entry.killed, cx, y, killedColor)
+            cx += TACZAsciiFontHelper.getStringWidth(font, entry.killed)
+            if (entry.multiKillCount >= 2) {
+                val multiText = " ×" + entry.multiKillCount
+                val multiColor = (a shl 24) or 0x00FFD54F
+                TACZAsciiFontHelper.drawStringWithShadow(font, multiText, cx, y, multiColor)
+            }
             y += lineHeight
         }
     }

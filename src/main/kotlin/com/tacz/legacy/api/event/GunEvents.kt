@@ -106,6 +106,21 @@ public open class EntityHurtByGunEvent(
 
 /**
  * 实体被枪械子弹击杀时触发。
+ *
+ * 监听方式：在 [MinecraftForge.EVENT_BUS] 上注册带 `@SubscribeEvent` 的方法即可接收；
+ * 服务端击杀时与客户端收到播报报文后各 post 一次，用 [logicalSide] 区分两端。
+ * 本事件不可取消（非 `@Cancelable`），仅用于观测击杀数据，不阻断击杀流程。
+ *
+ * @property bullet 造成击杀的子弹实体，可能为 null。
+ * @property killedEntity 被击杀的实体，可能为 null。
+ * @property attacker 攻击者，可能为 null（环境伤害/无主子弹）。
+ * @property gunId 枪械注册名。
+ * @property gunDisplayId 枪械展示注册名。
+ * @property baseDamage 基础伤害（未乘爆头倍率）。
+ * @property isHeadShot 是否爆头。
+ * @property headShotMultiplier 爆头倍率。
+ * @property multiKillCount 同一攻击者在多杀时间窗口内的连续击杀计数，1 = 首杀，2 = 双杀，依次递增。
+ * @property logicalSide 事件触发所在逻辑端。
  */
 public class EntityKillByGunEvent(
     public val bullet: Entity?,
@@ -117,6 +132,7 @@ public class EntityKillByGunEvent(
     public val isHeadShot: Boolean,
     public val headShotMultiplier: Float,
     public val logicalSide: Side,
+    public val multiKillCount: Int = 1,
 ) : Event() {
     public val amount: Float
         get() = if (isHeadShot) baseDamage * headShotMultiplier else baseDamage

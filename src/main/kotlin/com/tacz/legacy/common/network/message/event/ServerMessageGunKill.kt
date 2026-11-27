@@ -29,6 +29,7 @@ public class ServerMessageGunKill() : IMessage {
     private var killedName: String = ""
     private var distance: Float = 0.0f
     private var category: Int = KillFeedCategory.PVP.ordinal
+    private var multiKillCount: Int = 1
 
     public constructor(
         bulletId: Int,
@@ -43,6 +44,7 @@ public class ServerMessageGunKill() : IMessage {
         killedName: String = "",
         distance: Float = 0.0f,
         category: KillFeedCategory = KillFeedCategory.PVP,
+        multiKillCount: Int = 1,
     ) : this() {
         this.bulletId = bulletId
         this.killedEntityId = killedEntityId
@@ -56,6 +58,7 @@ public class ServerMessageGunKill() : IMessage {
         this.killedName = killedName
         this.distance = distance
         this.category = category.ordinal
+        this.multiKillCount = multiKillCount
     }
 
     override fun fromBytes(buf: ByteBuf) {
@@ -71,6 +74,7 @@ public class ServerMessageGunKill() : IMessage {
         killedName = ByteBufUtils.readUTF8String(buf)
         distance = buf.readFloat()
         category = buf.readInt()
+        multiKillCount = buf.readInt()
     }
 
     override fun toBytes(buf: ByteBuf) {
@@ -86,6 +90,7 @@ public class ServerMessageGunKill() : IMessage {
         ByteBufUtils.writeUTF8String(buf, killedName)
         buf.writeFloat(distance)
         buf.writeInt(category)
+        buf.writeInt(multiKillCount)
     }
 
     public class Handler : IMessageHandler<ServerMessageGunKill, IMessage?> {
@@ -106,6 +111,7 @@ public class ServerMessageGunKill() : IMessage {
                         isHeadShot = message.isHeadShot,
                         headShotMultiplier = message.headShotMultiplier,
                         logicalSide = Side.CLIENT,
+                        multiKillCount = message.multiKillCount,
                     ),
                 )
                 val category = KillFeedCategory.fromId(message.category)
@@ -135,6 +141,7 @@ public class ServerMessageGunKill() : IMessage {
                     gunName = gunName,
                     distance = message.distance,
                     headShot = message.isHeadShot,
+                    multiKillCount = message.multiKillCount,
                 )
             }
             return null
