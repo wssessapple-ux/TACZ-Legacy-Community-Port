@@ -50,7 +50,7 @@ private fun peakOf(spline: PolynomialSplineFunction?): Double {
             iGun = iGun,
             gunData = gunData,
             aimingProgress = operator.getSynAimingProgress(),
-            isCrawling = operator.getDataHolder().isCrawling,
+            isCrawling = operator.getSynIsCrawling(),
         ) ?: return
         pitchSplineFunction = recoil.pitch
         yawSplineFunction = recoil.yaw

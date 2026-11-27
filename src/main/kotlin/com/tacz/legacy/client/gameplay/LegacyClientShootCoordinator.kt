@@ -170,9 +170,8 @@ internal object LegacyClientShootCoordinator {
         if (MinecraftForge.EVENT_BUS.post(shootEvent)) return ShootResult.FORGE_EVENT_CANCEL
 
         val now = System.currentTimeMillis()
-        val relativeTimestamp = now - operator.getDataHolder().baseTimestamp
-        operator.getDataHolder().lastShootTimestamp = operator.getDataHolder().shootTimestamp
-        operator.getDataHolder().shootTimestamp = relativeTimestamp
+        val relativeTimestamp = now - operator.getBaseTimestamp()
+        operator.recordShotTimestamp(relativeTimestamp)
         clientLastShootTimestampMs = clientShootTimestampMs
         clientShootTimestampMs = now
 

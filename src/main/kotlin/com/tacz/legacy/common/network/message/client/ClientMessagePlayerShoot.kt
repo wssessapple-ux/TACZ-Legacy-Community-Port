@@ -53,8 +53,8 @@ public class ClientMessagePlayerShoot() : IMessage, IMessageHandler<ClientMessag
                     heldGunId,
                     result,
                     message.timestamp,
-                    operator.getDataHolder().baseTimestamp,
-                    operator.getDataHolder().currentGunItem != null,
+                    operator.getBaseTimestamp(),
+                    operator.getCurrentGunItem() != null,
                 )
             }
             if (result != com.tacz.legacy.api.entity.ShootResult.SUCCESS) {

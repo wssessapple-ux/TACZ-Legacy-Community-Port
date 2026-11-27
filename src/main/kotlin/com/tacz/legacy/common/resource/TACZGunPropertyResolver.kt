@@ -217,7 +217,7 @@ internal object TACZGunPropertyResolver {
         if (operator.getSynAimingProgress() == 1.0f) {
             return INACCURACY_AIM
         }
-        if (operator.getDataHolder().isCrawling) {
+        if (operator.getSynIsCrawling()) {
             return INACCURACY_LIE
         }
         if (shooter.isSneaking) {

@@ -113,8 +113,45 @@ public abstract class LivingEntityMixin implements IGunOperator, KnockBackModifi
     }
 
     @Override
+    public boolean getSynIsCrawling() {
+        return tacz$dataHolder.isCrawling;
+    }
+
+    @Override
+    public long getBaseTimestamp() {
+        return tacz$dataHolder.baseTimestamp;
+    }
+
+    @Override
+    public ItemStack getCurrentGunItem() {
+        Supplier<ItemStack> supplier = tacz$dataHolder.currentGunItem;
+        return supplier == null ? null : supplier.get();
+    }
+
+    @Override
     public void initialData() {
         tacz$dataHolder.initialData();
+    }
+
+    @Override
+    public void clearCurrentGunItem() {
+        tacz$dataHolder.currentGunItem = null;
+    }
+
+    @Override
+    public void syncBaseTimestamp(long timestamp) {
+        tacz$dataHolder.baseTimestamp = timestamp;
+    }
+
+    @Override
+    public void cancelBolt() {
+        tacz$dataHolder.isBolting = false;
+    }
+
+    @Override
+    public void recordShotTimestamp(long relativeTimestamp) {
+        tacz$dataHolder.lastShootTimestamp = tacz$dataHolder.shootTimestamp;
+        tacz$dataHolder.shootTimestamp = relativeTimestamp;
     }
 
     @Override
@@ -170,11 +207,6 @@ public abstract class LivingEntityMixin implements IGunOperator, KnockBackModifi
     @Override
     public float getProcessedSprintStatus() {
         return tacz$sprint.getProcessedSprintStatus();
-    }
-
-    @Override
-    public ShooterDataHolder getDataHolder() {
-        return tacz$dataHolder;
     }
 
     @Override

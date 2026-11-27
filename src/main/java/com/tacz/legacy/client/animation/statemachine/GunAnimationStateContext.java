@@ -189,7 +189,7 @@ public class GunAnimationStateContext extends ItemAnimationStateContext {
     }
 
     public boolean isCrawl() {
-        return processGunOperator(op -> op.getDataHolder().isCrawling).orElse(false);
+        return processGunOperator(op -> op.getSynIsCrawling()).orElse(false);
     }
 
     public boolean isOnGround() {

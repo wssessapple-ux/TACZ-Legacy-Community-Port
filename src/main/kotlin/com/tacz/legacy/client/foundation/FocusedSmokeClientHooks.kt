@@ -299,7 +299,7 @@ internal object FocusedSmokeClientHooks {
         val operator = IGunOperator.fromLivingEntity(player)
         transition(
             Step.WAIT_FIRST_RENDER,
-            "BASELINE_READY baseTimestamp=${operator.getDataHolder().baseTimestamp} drawCooldown=${operator.getSynDrawCoolDown()}"
+            "BASELINE_READY baseTimestamp=${operator.getBaseTimestamp()} drawCooldown=${operator.getSynDrawCoolDown()}"
         )
     }
 

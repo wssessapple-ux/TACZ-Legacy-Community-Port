@@ -371,7 +371,7 @@ internal class PlayerAnimatorBridge {
         val clips = resolveClips(player.heldItemMainhand) ?: resolveClipsByGunId(event.gunId) ?: return
         val operator = player as? IGunOperator
         val aiming = isAiming(operator)
-        val lie = operator?.getDataHolder()?.isCrawling == true
+        val lie = operator?.getSynIsCrawling() == true
 
         val preferred = when {
             aiming && lie -> CLIP_LIE_AIM_FIRE

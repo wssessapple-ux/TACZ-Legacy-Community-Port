@@ -4,7 +4,6 @@ import com.tacz.legacy.api.entity.IGunOperator;
 import com.tacz.legacy.api.item.IGun;
 import com.tacz.legacy.client.resource.GunDisplayInstance;
 import com.tacz.legacy.client.resource.TACZClientAssetManager;
-import com.tacz.legacy.common.entity.shooter.ShooterDataHolder;
 import com.tacz.legacy.common.resource.TACZGunPackPresentation;
 import com.tacz.legacy.common.resource.TACZGunPackRuntimeRegistry;
 import dev.kosmx.playerAnim.api.layered.modifier.AdjustmentModifier;
@@ -76,8 +75,7 @@ public class AdjustmentYRotModifier implements Function<String, Optional<Adjustm
     }
 
     private static boolean isPlayerLie(EntityPlayer player) {
-        ShooterDataHolder dataHolder = IGunOperator.fromLivingEntity(player).getDataHolder();
-        return dataHolder != null && dataHolder.isCrawling;
+        return IGunOperator.fromLivingEntity(player).getSynIsCrawling();
     }
 
     private static GunDisplayInstance resolveDisplay(ItemStack stack) {

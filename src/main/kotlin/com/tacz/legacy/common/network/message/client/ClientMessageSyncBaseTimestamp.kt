@@ -20,8 +20,7 @@ public class ClientMessageSyncBaseTimestamp() : IMessage, IMessageHandler<Client
         val player: EntityPlayerMP = ctx.serverHandler.player
         val receiveTimestamp = System.currentTimeMillis()
         player.serverWorld.addScheduledTask {
-            val dataHolder = IGunOperator.fromLivingEntity(player).getDataHolder()
-            dataHolder.baseTimestamp = receiveTimestamp
+            IGunOperator.fromLivingEntity(player).syncBaseTimestamp(receiveTimestamp)
             TACZLegacy.logger.debug("Sync server baseTimestamp: {}", receiveTimestamp)
         }
         return null

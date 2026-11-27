@@ -78,10 +78,9 @@ internal object LivingEntitySpeedModifier {
             dReload += msObj.get("reload")?.takeIf { it.isJsonPrimitive }?.asFloat ?: 0f
         }
         val operator = IGunOperator.fromLivingEntity(shooter)
-        val holder = operator.getDataHolder()
         val targetSpeed = when {
-            holder.reloadStateType.isReloading() -> (gunData?.moveSpeedReload ?: 0f) + dReload
-            holder.isAiming -> (gunData?.moveSpeedAim ?: 0f) + dAim
+            operator.getSynReloadState().isReloading() -> (gunData?.moveSpeedReload ?: 0f) + dReload
+            operator.getSynIsAiming() -> (gunData?.moveSpeedAim ?: 0f) + dAim
             else -> (gunData?.moveSpeedBase ?: 0f) + dBase
         }.coerceAtLeast(0f)
         // 无修正时不添加 modifier

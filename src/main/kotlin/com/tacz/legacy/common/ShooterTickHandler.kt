@@ -53,20 +53,19 @@ internal object ShooterTickHandler {
         if (entity.world.isRemote) return
 
         val operator = IGunOperator.fromLivingEntity(entity)
-        val holder = operator.getDataHolder()
 
         // 仅在手持枪械时 tick 子系统
         val mainHand = entity.heldItemMainhand
         if (mainHand.isEmpty || mainHand.item !is IGun) {
             // 非持枪：如果之前有持枪状态需要清理
-            if (holder.currentGunItem != null) {
+            if (operator.getCurrentGunItem() != null) {
                 operator.initialData()
-                holder.currentGunItem = null
+                operator.clearCurrentGunItem()
             }
             return
         }
 
-        val syncedGun = holder.currentGunItem?.get()
+        val syncedGun = operator.getCurrentGunItem()
         if (!isSameGunStack(mainHand, syncedGun)) {
             operator.draw(Supplier { entity.heldItemMainhand })
         }

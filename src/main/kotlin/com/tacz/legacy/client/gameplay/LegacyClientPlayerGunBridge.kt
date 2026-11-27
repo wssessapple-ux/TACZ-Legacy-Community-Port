@@ -101,7 +101,7 @@ internal object LegacyClientPlayerGunBridge {
             if (lastHeldGunSignature != null) {
                 lastHeldGunStack?.let(::beginPutAwayAndKeep)
                 operator.initialData()
-                operator.getDataHolder().currentGunItem = null
+                operator.clearCurrentGunItem()
                 LegacyClientShootCoordinator.resetTiming()
                 lastHeldGunSignature = null
                 lastHeldGunStack = null
@@ -115,8 +115,7 @@ internal object LegacyClientPlayerGunBridge {
             append('|')
             append(iGun.getGunId(mainHand))
         }
-        val holder = operator.getDataHolder()
-        if (signature != lastHeldGunSignature || holder.currentGunItem == null) {
+        if (signature != lastHeldGunSignature || operator.getCurrentGunItem() == null) {
             lastHeldGunStack?.let(::beginPutAwayAndKeep)
             operator.draw { player.heldItemMainhand }
             TACZNetworkHandler.sendToServer(ClientMessagePlayerDraw())
@@ -290,15 +289,14 @@ internal object LegacyClientPlayerGunBridge {
      * 每 tick 检查是否需要拉拴，自动触发拉拴操作，并在膛内弹药同步到位后结束拉拴状态。
      */
     private fun tickClientAutoBolt(player: EntityPlayerSP, operator: IGunOperator) {
-        val data = operator.getDataHolder()
         val stack = player.heldItemMainhand
         val iGun = stack.item as? IGun ?: run {
-            data.isBolting = false
+            operator.cancelBolt()
             return
         }
 
         // 尝试触发拉拴（与上游 bolt() 条件对齐）
-        if (!data.isBolting) {
+        if (!operator.getSynIsBolting()) {
             val gunId = iGun.getGunId(stack)
             val gunData = GunDataAccessor.getGunData(gunId) ?: return
             if (gunData.boltType != BoltType.MANUAL_ACTION) return
@@ -314,7 +312,7 @@ internal object LegacyClientPlayerGunBridge {
 
             // 触发拉拴
             operator.bolt()
-            if (data.isBolting) {
+            if (operator.getSynIsBolting()) {
                 TACZNetworkHandler.sendToServer(ClientMessagePlayerBolt())
                 LegacyClientGunAnimationDriver.triggerIfInitialized(stack, GunAnimationConstant.INPUT_BOLT)
                 val display = LegacyClientGunAnimationDriver.resolveDisplayInstance(stack)
@@ -323,8 +321,8 @@ internal object LegacyClientPlayerGunBridge {
         }
 
         // 对于客户端来说，膛内弹药被填入的状态同步到客户端的瞬间，bolt 过程才算完全结束
-        if (data.isBolting && iGun.hasBulletInBarrel(stack)) {
-            data.isBolting = false
+        if (operator.getSynIsBolting() && iGun.hasBulletInBarrel(stack)) {
+            operator.cancelBolt()
         }
     }
 

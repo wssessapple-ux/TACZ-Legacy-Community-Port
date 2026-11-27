@@ -29,7 +29,7 @@ public class ServerMessageSyncBaseTimestamp : IMessage {
             mc.addScheduledTask {
                 val player = mc.player ?: return@addScheduledTask
                 val operator = com.tacz.legacy.api.entity.IGunOperator.fromLivingEntity(player)
-                operator.getDataHolder().baseTimestamp = receiveTimestamp
+                operator.syncBaseTimestamp(receiveTimestamp)
                 LegacyClientShootCoordinator.resetTiming()
                 TACZLegacy.logger.debug("Sync client baseTimestamp: {}", receiveTimestamp)
             }
