@@ -16,6 +16,14 @@ import java.io.StringReader
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * 单个数值修饰符：在基础值上叠加加算、百分比、倍率，可选附带一段 Lua 表达式覆盖结果。
+ *
+ * @property addend 加算项，直接叠加到基础值。
+ * @property percent 百分比项，按比例放大（在加算后作用）。
+ * @property multiplier 倍率项，与百分比相乘。
+ * @property function 可选 Lua 表达式源码；为 null 或空白时不执行脚本。
+ */
 public data class Modifier(
     val addend: Double = 0.0,
     val percent: Double = 0.0,
@@ -37,6 +45,7 @@ internal abstract class JsonProperty<T>(private var value: T?) {
     public abstract fun initComponents()
 }
 
+/** 由一组 [Modifier] 预聚合后缓存的求值器，多次取值只跑一次聚合与脚本求值。 */
 public class ParameterizedCache<T> private constructor(
     modifiers: List<Modifier>,
     private val defaultValue: T,
@@ -92,6 +101,7 @@ public class ParameterizedCache<T> private constructor(
     }
 }
 
+/** 左右两个 [ParameterizedCache] 的配对，成对缓存一类双轴数值（如俯仰 / 偏航后座）。 */
 public class ParameterizedCachePair<L, R> private constructor(
     private val leftCache: ParameterizedCache<L>,
     private val rightCache: ParameterizedCache<R>,
@@ -213,9 +223,11 @@ public object ModifierEvaluator {
         loaded
     }
 
+    /** 对单个修饰符求值，[defaultValue] 为未修饰时的基准值。 */
     @JvmStatic
     public fun eval(modifier: Modifier, defaultValue: Double): Double = eval(listOf(modifier), defaultValue)
 
+    /** 对一组数值修饰符聚合求值，[defaultValue] 为未修饰时的基准值。 */
     @JvmStatic
     public fun eval(modifiers: List<Modifier>, defaultValue: Double): Double {
         var addend = defaultValue
@@ -235,6 +247,7 @@ public object ModifierEvaluator {
         return value
     }
 
+    /** 布尔修饰符聚合：基准为 true 取全部为真，基准为 false 取任一为真。 */
     @JvmStatic
     public fun eval(modified: List<Boolean>, defaultValue: Boolean): Boolean {
         return if (defaultValue) {

@@ -16,9 +16,10 @@ public object ResourceManager {
     internal fun snapshot(): List<ExtraEntry> = extraEntries.toList()
 
     /**
-     * @deprecated 旧入口仅保留兼容提示，导出请改用 [registerExportResource]。
+     * @deprecated 旧版枪包登记入口，仅保留兼容；新代码请改用 [registerExportResource]。
+     * 该方法只记录告警，不再登记资源。
      */
-    @Deprecated("Use registerExportResource instead")
+    @Deprecated("Use registerExportResource instead", ReplaceWith("registerExportResource(modMainClass, extraFolderPath)"))
     @JvmStatic
     public fun registerExtraGunPack(modMainClass: Class<*>, extraFolderPath: String): Unit {
         TACZLegacy.logger.warn(
@@ -28,6 +29,7 @@ public object ResourceManager {
         )
     }
 
+    /** 登记需要随枪包一并导出的附属资源目录。 */
     @JvmStatic
     public fun registerExportResource(modMainClass: Class<*>, extraFolderPath: String): Unit {
         extraEntries += ExtraEntry(

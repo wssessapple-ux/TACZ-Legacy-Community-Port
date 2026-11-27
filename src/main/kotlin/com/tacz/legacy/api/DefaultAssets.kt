@@ -2,6 +2,7 @@ package com.tacz.legacy.api
 
 import net.minecraft.util.ResourceLocation
 
+/** 缺省与空占位资源 id：`DEFAULT_*` 为缺省回退资源，`EMPTY_*` 表示未安装 / 空槽位。 */
 public object DefaultAssets {
     @JvmField
     public val DEFAULT_BLOCK_ID: ResourceLocation = ResourceLocation("tacz", "gun_smith_table")

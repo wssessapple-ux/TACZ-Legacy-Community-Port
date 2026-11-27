@@ -10,7 +10,14 @@ import net.minecraftforge.fml.relauncher.Side
 
 /**
  * 扣动扳机时触发（每次扳机仅触发一次，与 [GunFireEvent] 不同）。
- * 与上游 TACZ GunShootEvent 行为保持一致。
+ *
+ * 监听方式：在 [MinecraftForge.EVENT_BUS] 上注册带 `@SubscribeEvent` 的方法即可接收。
+ * 服务端权威射击与客户端本地预测都会 post，服务端结果回包后也会在客户端回放一次，
+ * 用 [logicalSide] 区分两端。本事件**可取消**：监听返回取消后本次射击被中止。
+ *
+ * @property shooter 发起射击的实体。
+ * @property gunId 枪械注册名。
+ * @property logicalSide 事件触发所在逻辑端。
  */
 @Cancelable
 public class GunShootEvent(
@@ -21,7 +28,14 @@ public class GunShootEvent(
 
 /**
  * 每发子弹击发时触发（Burst 模式一次扳机可多次触发）。
- * 与上游 TACZ GunFireEvent 行为保持一致。
+ *
+ * 监听方式：在 [MinecraftForge.EVENT_BUS] 上注册带 `@SubscribeEvent` 的方法即可接收。
+ * 服务端、客户端预测与服务端回包回放都会 post，用 [logicalSide] 区分两端。
+ * 本事件**可取消**：监听返回取消后该发子弹不再击发。
+ *
+ * @property shooter 发起射击的实体。
+ * @property gunId 枪械注册名。
+ * @property logicalSide 事件触发所在逻辑端。
  */
 @Cancelable
 public class GunFireEvent(
@@ -32,7 +46,14 @@ public class GunFireEvent(
 
 /**
  * 开始换弹时触发。
- * 与上游 TACZ GunReloadEvent 行为保持一致。
+ *
+ * 监听方式：在 [MinecraftForge.EVENT_BUS] 上注册带 `@SubscribeEvent` 的方法即可接收。
+ * 客户端本地预测与服务端都会 post，服务端回包后也会在客户端回放，用 [logicalSide] 区分两端。
+ * 本事件**可取消**：监听返回取消后本次换弹被中止。
+ *
+ * @property entity 发起换弹的实体。
+ * @property gunItemStack 正在换弹的枪物品栈。
+ * @property logicalSide 事件触发所在逻辑端。
  */
 @Cancelable
 public class GunReloadEvent(
@@ -42,8 +63,15 @@ public class GunReloadEvent(
 ) : Event()
 
 /**
- * 近战时触发。
- * 与上游 TACZ GunMeleeEvent 行为保持一致。
+ * 持枪械近战时触发。
+ *
+ * 监听方式：在 [MinecraftForge.EVENT_BUS] 上注册带 `@SubscribeEvent` 的方法即可接收。
+ * 服务端发起近战，结果回包后在客户端回放，用 [logicalSide] 区分两端。
+ * 本事件**可取消**：监听返回取消后本次近战被中止。
+ *
+ * @property shooter 发起近战的实体。
+ * @property gunItemStack 近战所持枪物品栈。
+ * @property logicalSide 事件触发所在逻辑端。
  */
 @Cancelable
 public class GunMeleeEvent(
@@ -53,8 +81,16 @@ public class GunMeleeEvent(
 ) : Event()
 
 /**
- * 切枪时触发。
- * 与上游 TACZ GunDrawEvent 行为保持一致。
+ * 切枪时触发（收起旧枪、取出新枪）。
+ *
+ * 监听方式：在 [MinecraftForge.EVENT_BUS] 上注册带 `@SubscribeEvent` 的方法即可接收。
+ * 服务端与客户端都会 post，服务端回包后也会在客户端回放，用 [logicalSide] 区分两端。
+ * 本事件**不可取消**，仅用于观测切枪流程。
+ *
+ * @property entity 切枪的实体。
+ * @property previousGunItem 切出前手持的枪物品栈。
+ * @property currentGunItem 切入后手持的枪物品栈。
+ * @property logicalSide 事件触发所在逻辑端。
  */
 public class GunDrawEvent(
     public val entity: EntityLivingBase,
@@ -65,7 +101,22 @@ public class GunDrawEvent(
 
 /**
  * 实体被枪械子弹命中后的事件。
- * 当前 Legacy 迁移以 HUD / 音效反馈为主，暴露 Post 事件供客户端与服务端复用。
+ *
+ * 监听方式：在 [MinecraftForge.EVENT_BUS] 上注册带 `@SubscribeEvent` 的方法即可接收。
+ * 服务端命中判定与客户端收到回包后都会 post，用 [logicalSide] 区分两端。
+ * 本事件**不可取消**，仅用于命中反馈（HUD 标记、音效等），不阻断伤害流程。
+ * 实际对外投递的是 [Post] 子类；基类保留供扩展。
+ *
+ * @property bullet 命中子弹实体，可能为 null。
+ * @property hurtEntity 被命中的实体，可能为 null。
+ * @property attacker 攻击者，可能为 null（环境伤害 / 无主子弹）。
+ * @property gunId 枪械注册名。
+ * @property gunDisplayId 枪械展示注册名。
+ * @property baseAmount 基础伤害（未乘爆头倍率）。
+ * @property isHeadShot 是否爆头。
+ * @property headShotMultiplier 爆头倍率。
+ * @property logicalSide 事件触发所在逻辑端。
+ * @property amount 实际伤害：爆头时为 `baseAmount * headShotMultiplier`，否则为 `baseAmount`。
  */
 public open class EntityHurtByGunEvent(
     public val bullet: Entity?,
@@ -81,6 +132,7 @@ public open class EntityHurtByGunEvent(
     public val amount: Float
         get() = if (isHeadShot) baseAmount * headShotMultiplier else baseAmount
 
+    /** 命中完成后的回调事件，供客户端命中标记 / 伤害数字等反馈监听。 */
     public class Post(
         bullet: Entity?,
         hurtEntity: Entity?,

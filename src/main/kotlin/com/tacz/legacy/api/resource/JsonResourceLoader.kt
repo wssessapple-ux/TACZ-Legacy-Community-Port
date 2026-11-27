@@ -19,8 +19,11 @@ import java.util.zip.ZipFile
 
 /**
  * 旧版枪包路径读取器，仅保留给兼容转换链路使用。
+ *
+ * @deprecated 新枪包走运行时资源加载链路，请勿在新代码中继承或调用本类；
+ * 仅用于把旧版目录结构的枪包转换为当前格式，后续版本可能移除。
  */
-@Deprecated("Only retained for legacy pack compatibility")
+@Deprecated("Only retained for legacy pack compatibility; use the runtime resource loading pipeline")
 public abstract class JsonResourceLoader<T>(
     private val dataClass: Class<T>,
     markerName: String,

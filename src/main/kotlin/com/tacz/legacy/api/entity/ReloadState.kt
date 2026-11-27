@@ -4,7 +4,9 @@ package com.tacz.legacy.api.entity
  * 换弹状态，与上游 TACZ ReloadState 行为一致。
  */
 public class ReloadState(
+    /** 换弹阶段类型。 */
     public var stateType: StateType = StateType.NOT_RELOADING,
+    /** 换弹剩余倒计时（毫秒），未换弹时为 [NOT_RELOADING_COUNTDOWN]。 */
     public var countDown: Long = NOT_RELOADING_COUNTDOWN,
 ) {
     public constructor(src: ReloadState) : this(src.stateType, src.countDown)
