@@ -10,6 +10,7 @@ import com.tacz.legacy.common.resource.TACZAttachmentModifierRegistry
 import com.tacz.legacy.common.resource.TACZExplosionModifierValue
 import com.tacz.legacy.common.resource.TACZGunPropertyResolver
 import com.tacz.legacy.common.resource.TACZIgniteValue
+import com.tacz.legacy.common.config.BossKillConfigRead
 import com.tacz.legacy.common.config.HeadShotAabbConfigRead
 import com.tacz.legacy.common.config.LegacyConfigManager
 import com.tacz.legacy.common.network.TACZNetworkHandler
@@ -865,6 +866,14 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         )
     }
 
+    private fun resolveEntityName(entity: Entity?): String {
+        if (entity == null) return ""
+        if (entity is net.minecraft.entity.player.EntityPlayer) {
+            return entity.name
+        }
+        return entity.displayName?.formattedText?.takeIf { it.isNotBlank() } ?: entity.name
+    }
+
     private fun emitHitFeedback(target: Entity, feedback: HitFeedbackResult) {
         if (world.isRemote) {
             return
@@ -891,12 +900,13 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
             val killedIsPlayer = target is net.minecraft.entity.player.EntityPlayer
             val category = when {
                 attackerIsPlayer && killedIsPlayer -> KillFeedCategory.PVP
-                attackerIsPlayer && !killedIsPlayer -> KillFeedCategory.PLAYER_KILLS_MOB
+                attackerIsPlayer && !killedIsPlayer ->
+                    if (BossKillConfigRead.isBoss(target)) KillFeedCategory.BOSS_KILL else KillFeedCategory.PLAYER_KILLS_MOB
                 !attackerIsPlayer && killedIsPlayer -> KillFeedCategory.MOB_KILLS_PLAYER
                 else -> KillFeedCategory.OTHER
             }
-            val attackerName = (attacker as? net.minecraft.entity.player.EntityPlayer)?.name ?: ""
-            val killedName = (target as? net.minecraft.entity.player.EntityPlayer)?.name ?: ""
+            val attackerName = resolveEntityName(attacker)
+            val killedName = resolveEntityName(target)
             val killDistance = attacker?.getDistance(target) ?: 0.0f
             TACZNetworkHandler.sendToDimension(
                 ServerMessageGunKill(

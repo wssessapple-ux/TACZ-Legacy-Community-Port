@@ -86,6 +86,7 @@ internal data class ServerConfigValues(
     var ammoBoxStackSize: Int = 3,
     var enableCrawl: Boolean = true,
     var chunkLoaderLimitPerPlayer: Int = 3,
+    var bossKillEntities: List<String> = emptyList(),
 )
 
 internal enum class ServerToggleKey(
@@ -408,6 +409,10 @@ internal object LegacyConfigManager {
                 "ChunkLoaderLimitPerPlayer", "misc", 3, 0, Int.MAX_VALUE,
                 "Maximum chunk loaders each player can place. 0 means unlimited."
             )
+            server.bossKillEntities = cfg.getStringList(
+                "BossKillEntities", "misc", emptyArray(),
+                "Entities treated as bosses / elites for the kill feed boss category. Format: modid:entity"
+            ).toList()
             server.enableTableFilter = cfg.getBoolean(
                 "EnableDefaultGunSmithTableFilter", "misc", true,
                 "Enable the recipe limit of the default gunsmith table or not."
@@ -433,6 +438,7 @@ internal object LegacyConfigManager {
 
     private fun syncDerivedViews(): Unit {
         HeadShotAabbConfigRead.reload(server.headShotAabb)
+        BossKillConfigRead.reload(server.bossKillEntities)
         InteractKeyConfigRead.reload(
             blockWhitelist = server.interactKeyWhitelistBlocks,
             entityWhitelist = server.interactKeyWhitelistEntities,
