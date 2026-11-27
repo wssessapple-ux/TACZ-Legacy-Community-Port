@@ -46,7 +46,7 @@
 - **游戏版本**：Minecraft 1.12.2 (Forge)
 - **模组版本**：0.8.0-Beta (Unofficial，Beta 公测版)
 - **Java 版本**：Java 8
-- **构建可验证性**：发布版 JAR 的 SHA-256 哈希值将在每次发布时更新。当前 0.8.0-Beta：`ba612a730731e78a5827b1338a30440560dcfef3aa1986f86b0a636784bdc301`
+- **构建可验证性**：发布版 JAR 的 SHA-256 哈希值将在每次发布时更新。当前 0.8.0-Beta：`539638db0828c7fbb7c641c3ea30a9e2428a64b0d923c3b7e69f78a7e9a1fd46`
 
 ---
 
