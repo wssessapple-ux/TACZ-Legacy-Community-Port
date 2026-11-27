@@ -13,6 +13,7 @@ import com.tacz.legacy.common.resource.TACZIgniteValue
 import com.tacz.legacy.common.config.HeadShotAabbConfigRead
 import com.tacz.legacy.common.config.LegacyConfigManager
 import com.tacz.legacy.common.network.TACZNetworkHandler
+import com.tacz.legacy.common.network.message.event.KillFeedCategory
 import com.tacz.legacy.common.network.message.event.ServerMessageGunHurt
 import com.tacz.legacy.common.network.message.event.ServerMessageGunKill
 import io.netty.buffer.ByteBuf
@@ -886,6 +887,14 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
                     logicalSide = Side.SERVER,
                 ),
             )
+            val attackerIsPlayer = attacker is net.minecraft.entity.player.EntityPlayer
+            val killedIsPlayer = target is net.minecraft.entity.player.EntityPlayer
+            val category = when {
+                attackerIsPlayer && killedIsPlayer -> KillFeedCategory.PVP
+                attackerIsPlayer && !killedIsPlayer -> KillFeedCategory.PLAYER_KILLS_MOB
+                !attackerIsPlayer && killedIsPlayer -> KillFeedCategory.MOB_KILLS_PLAYER
+                else -> KillFeedCategory.OTHER
+            }
             val attackerName = (attacker as? net.minecraft.entity.player.EntityPlayer)?.name ?: ""
             val killedName = (target as? net.minecraft.entity.player.EntityPlayer)?.name ?: ""
             val killDistance = attacker?.getDistance(target) ?: 0.0f
@@ -902,6 +911,7 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
                     attackerName = attackerName,
                     killedName = killedName,
                     distance = killDistance,
+                    category = category,
                 ),
                 world.provider.dimension,
             )

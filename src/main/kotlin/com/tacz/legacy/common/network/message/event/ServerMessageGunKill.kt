@@ -2,6 +2,7 @@ package com.tacz.legacy.common.network.message.event
 
 import com.tacz.legacy.api.DefaultAssets
 import com.tacz.legacy.api.event.EntityKillByGunEvent
+import com.tacz.legacy.common.config.LegacyConfigManager
 import com.tacz.legacy.common.resource.TACZGunPackPresentation
 import com.tacz.legacy.common.resource.TACZGunPackRuntimeRegistry
 import io.netty.buffer.ByteBuf
@@ -27,6 +28,7 @@ public class ServerMessageGunKill() : IMessage {
     private var attackerName: String = ""
     private var killedName: String = ""
     private var distance: Float = 0.0f
+    private var category: Int = KillFeedCategory.PVP.ordinal
 
     public constructor(
         bulletId: Int,
@@ -40,6 +42,7 @@ public class ServerMessageGunKill() : IMessage {
         attackerName: String = "",
         killedName: String = "",
         distance: Float = 0.0f,
+        category: KillFeedCategory = KillFeedCategory.PVP,
     ) : this() {
         this.bulletId = bulletId
         this.killedEntityId = killedEntityId
@@ -52,6 +55,7 @@ public class ServerMessageGunKill() : IMessage {
         this.attackerName = attackerName
         this.killedName = killedName
         this.distance = distance
+        this.category = category.ordinal
     }
 
     override fun fromBytes(buf: ByteBuf) {
@@ -66,6 +70,7 @@ public class ServerMessageGunKill() : IMessage {
         attackerName = ByteBufUtils.readUTF8String(buf)
         killedName = ByteBufUtils.readUTF8String(buf)
         distance = buf.readFloat()
+        category = buf.readInt()
     }
 
     override fun toBytes(buf: ByteBuf) {
@@ -80,6 +85,7 @@ public class ServerMessageGunKill() : IMessage {
         ByteBufUtils.writeUTF8String(buf, attackerName)
         ByteBufUtils.writeUTF8String(buf, killedName)
         buf.writeFloat(distance)
+        buf.writeInt(category)
     }
 
     public class Handler : IMessageHandler<ServerMessageGunKill, IMessage?> {
@@ -102,6 +108,25 @@ public class ServerMessageGunKill() : IMessage {
                         logicalSide = Side.CLIENT,
                     ),
                 )
+                val category = KillFeedCategory.fromId(message.category)
+                val localPlayer = Minecraft.getMinecraft().player
+                val isAttacker = localPlayer != null && localPlayer.entityId == message.attackerId
+                val isKilled = localPlayer != null && localPlayer.entityId == message.killedEntityId
+                val cfg = LegacyConfigManager.client
+                val allowed = when (category) {
+                    KillFeedCategory.PVP -> when {
+                        isAttacker -> cfg.killFeedPvpKill
+                        isKilled -> cfg.killFeedPvpKilled
+                        else -> cfg.killFeedPvpKill
+                    }
+                    KillFeedCategory.BOSS_KILL -> cfg.killFeedBossKill
+                    KillFeedCategory.MOB_KILLS_PLAYER -> cfg.killFeedKilledByMob
+                    KillFeedCategory.MULTI_KILL -> cfg.killFeedMultiKill
+                    KillFeedCategory.PLAYER_KILLS_MOB, KillFeedCategory.OTHER -> false
+                }
+                if (!allowed) {
+                    return@addScheduledTask
+                }
                 val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
                 val gunName = TACZGunPackPresentation.localizedGunName(snapshot, message.gunId)
                 com.tacz.legacy.client.event.KillFeedState.add(

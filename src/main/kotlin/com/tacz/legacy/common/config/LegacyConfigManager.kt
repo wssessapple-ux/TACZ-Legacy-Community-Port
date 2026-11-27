@@ -54,6 +54,11 @@ internal data class ClientConfigValues(
     var killFeedEnable: Boolean = true,
     var killFeedDurationSecond: Double = 5.0,
     var killFeedMaxEntries: Int = 5,
+    var killFeedPvpKill: Boolean = true,
+    var killFeedPvpKilled: Boolean = true,
+    var killFeedBossKill: Boolean = false,
+    var killFeedMultiKill: Boolean = false,
+    var killFeedKilledByMob: Boolean = false,
     var disableMovementAttributeFov: Boolean = true,
     var enableTaczIdInTooltip: Boolean = true,
     var blockEntityTranslucent: Boolean = false,
@@ -316,6 +321,11 @@ internal object LegacyConfigManager {
             client.killFeedEnable = cfg.getBoolean("KillFeedEnable", "render", true, "Whether or not to display the kill feed.")
             client.killFeedDurationSecond = cfg.getFloat("KillFeedDurationSecond", "render", 5.0f, 0.0f, 600.0f, "The duration a kill feed entry stays on screen, in second.").toDouble()
             client.killFeedMaxEntries = cfg.getInt("KillFeedMaxEntries", "render", 5, 1, 32, "The maximum number of kill feed entries shown at once.")
+            client.killFeedPvpKill = cfg.getBoolean("KillFeedPvpKill", "render", true, "Show kill feed entries where you kill another player (PvP).")
+            client.killFeedPvpKilled = cfg.getBoolean("KillFeedPvpKilled", "render", true, "Show kill feed entries where you are killed by another player (PvP).")
+            client.killFeedBossKill = cfg.getBoolean("KillFeedBossKill", "render", false, "Show kill feed entries for killing bosses / elite mobs. Off by default.")
+            client.killFeedMultiKill = cfg.getBoolean("KillFeedMultiKill", "render", false, "Show multi-kill / streak notifications. Off by default.")
+            client.killFeedKilledByMob = cfg.getBoolean("KillFeedKilledByMob", "render", false, "Show kill feed entries where you are killed by a mob. Off by default.")
             client.disableMovementAttributeFov = cfg.getBoolean("DisableMovementAttributeFov", "render", true, "Disable the FOV effect from the movement speed attribute while holding a gun.")
             client.enableTaczIdInTooltip = cfg.getBoolean("EnableTaczIdInTooltip", "render", true, "Enable the display of the TACZ ID in the tooltip when advanced tooltip is enabled.")
             client.blockEntityTranslucent = cfg.getBoolean("EnableBlockEntityTranslucent", "render", false, "Enable translucent block-entity rendering.")
