@@ -90,6 +90,8 @@ public class BedrockAttachmentModel extends BedrockAnimatedModel {
     private ItemStack attachmentItem;
     private boolean isScope = false;
     private boolean isSight = false;
+    /** 腰射判定门槛：与无模板降级路径的分划/遮罩门控（0.05F）口径一致。 */
+    private static final float HIP_FIRE_PROGRESS_THRESHOLD = 0.05F;
     @Nullable
     private net.minecraft.util.ResourceLocation textureId;
 
@@ -307,11 +309,13 @@ public class BedrockAttachmentModel extends BedrockAnimatedModel {
         }
 
         if (firstPerson) {
-            // 第一人称腰射与开镜走同一套模板分层（对齐上游 TACZ renderScope）：镜身按
-            // EQUAL 0 绘制，目镜轮廓内的镜筒内壁被模板剔除，避免直视镂空目镜口钻进空筒、
-            // 看到无贴图/背面内壁形成的大圆黑腔。腰射 progress≈0 时遮罩圆盘退化到 0、
-            // 分划板被 invertedMask 模板挡住画不出，不影响内壁剔除。
-            if (isScope && isSight) {
+            // 腰射（瞄准进度≈0）时跳过 stencil/ocular/division 整套开镜专属分层：遮罩圆盘
+            // 退化到 0、分划本就不显示，这套模板写入、临时件绘制和眼盒投影全是空转。这里
+            // 只画镜身静态几何（super.render），进入开镜过程后再走下面的模板分层。
+            if (resolveCurrentAimingProgress() <= HIP_FIRE_PROGRESS_THRESHOLD) {
+                super.render();
+                logScopeDiag("hip-shortcut");
+            } else if (isScope && isSight) {
                 renderBoth();
                 logScopeDiag("both");
             } else if (isScope) {
