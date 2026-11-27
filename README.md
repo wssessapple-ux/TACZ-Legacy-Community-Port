@@ -156,6 +156,7 @@
 - **破片手雷出手后可能飘飞不落地**：扔出后一直飞到引信爆炸，正在排查，下版跟进。
 - **性能问题**：部分场景帧率下降、内存占用偏高，后续将持续优化。
 - **枪械挂上瞄准镜配件后，光在第一人称手持状态（没开镜）帧率就明显往下掉；摘掉镜或不开镜时正常。**(已找到问题所在,0.8.1修复)
+  
 **完整已知问题列表请查看 [GitHub Discussions](https://github.com/wssessapple-ux/TACZ-Legacy-Community-Port/discussions)。**
 
 # TaCZ Legacy: Community Port 生存模式合成指南 (v0.5.0)
