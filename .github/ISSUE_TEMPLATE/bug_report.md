@@ -6,22 +6,24 @@ labels: bug
 assignees: ''
 ---
 
-> ⚠️ 重要提醒
+> ⚠️ **重要提醒**
 > 本项目为**非官方社区移植版**，请勿将此问题反馈至 TaCZ 上游仓库！
 > 上游作者不负责处理 1.12.2 移植产生的问题。
 > 纯闪退 / 崩溃请改用「💥 崩溃报告」模板。
 
 ## 📋 基础信息
 
-- Minecraft 版本：
-- Forge 版本：
-- TACZ‑Legacy 版本：
-- Forgelin‑Continuous 版本：
-- MixinBooter 版本：
-- Java 版本：
-- 是否安装 PlayerAnimator：是 / 否
-- 是否安装 JEI：是 / 否
-- 单人 / 联机（服务端核心）：
+| 项目 | 信息 |
+| --- | --- |
+| Minecraft 版本 |  |
+| Forge 版本 |  |
+| TACZ-Legacy 版本 |  |
+| Forgelin-Continuous 版本 |  |
+| MixinBooter 版本 |  |
+| Java 版本 |  |
+| PlayerAnimator | 是 / 否 |
+| JEI | 是 / 否 |
+| 单人 / 联机 | （联机请注明服务端核心） |
 
 ## ❌ 问题描述
 
@@ -42,6 +44,11 @@ assignees: ''
 ## 🧩 模组列表
 
 列出同时加载的主要模组（尤其枪械、渲染、性能类）：
+
+## 🤖 描述来源
+
+- [ ] 描述与排查信息由本人人工整理
+- [ ] 使用 AI 辅助生成：关键现象、复现步骤与日志片段**已经本人逐条核对**
 
 ## 📝 附加说明
 
